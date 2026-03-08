@@ -770,6 +770,20 @@ void wifi_screen_create(void)
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, NULL, true);  // WiFi is active
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, wifi_settings_clicked, false);
 
+    current_wifi_info.is_connected = wifi_is_connected();
+    if (current_wifi_info.is_connected)
+    {
+        esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+        if (sta)
+        {
+            esp_netif_ip_info_t ip_info;
+            if (esp_netif_get_ip_info(sta, &ip_info) == ESP_OK && ip_info.ip.addr != 0)
+            {
+                snprintf(current_wifi_info.ip_address, sizeof(current_wifi_info.ip_address), IPSTR, IP2STR(&ip_info.ip));
+            }
+        }
+    }
+
     if (wifi_connect_pending) {
         wifi_connection_state = WIFI_CONNECTION_STATE_CONNECTING;
     } else if (current_wifi_info.is_connected) {

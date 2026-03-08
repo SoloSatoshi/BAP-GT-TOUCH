@@ -11,8 +11,8 @@
 #include "nav_icons.h"
 #include "navigation_guard.h"
 #include "custom_fonts.h"
+#include "time_service.h"
 #include "esp_timer.h"
-#include "lwip/apps/sntp.h"
 #include <time.h>
 
 static lv_obj_t *clock_screen = NULL;
@@ -33,7 +33,6 @@ static char current_date_text[32] = "Waiting for time sync";
 
 static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_event_cb_t event_cb, bool active);
 static lv_obj_t *create_bottom_nav_btn_img(lv_obj_t *parent, const lv_img_dsc_t *img_dsc, lv_event_cb_t event_cb, bool active);
-static void clock_start_sntp(void);
 static void clock_update_time_text(void);
 static void clock_timer_cb(lv_timer_t *timer);
 static void clock_toggle_content_clicked(lv_event_t *e);
@@ -154,7 +153,6 @@ void clock_screen_create(void)
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, clock_wifi_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, clock_settings_clicked, false);
 
-    clock_start_sntp();
     clock_update_time_text();
     clock_timer = lv_timer_create(clock_timer_cb, 1000, NULL);
 }
@@ -190,7 +188,7 @@ lv_obj_t *clock_get_screen(void)
 static void clock_update_time_text(void)
 {
     time_t now = time(NULL);
-    if (now < 946684800)
+    if (!time_service_is_ready())
     {
         int64_t uptime_us = esp_timer_get_time();
         int32_t uptime_sec = (int32_t)(uptime_us / 1000000);
@@ -267,21 +265,6 @@ static void clock_refresh_layout(void)
     {
         lv_obj_align_to(clock_ampm_shadow_label, clock_ampm_label, LV_ALIGN_CENTER, 4, 4);
     }
-}
-
-static void clock_start_sntp(void)
-{
-    static bool sntp_started = false;
-    if (sntp_started || sntp_enabled())
-    {
-        sntp_started = true;
-        return;
-    }
-
-    sntp_started = true;
-    sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    sntp_setservername(0, "pool.ntp.org");
-    sntp_init();
 }
 
 static void clock_timer_cb(lv_timer_t *timer)

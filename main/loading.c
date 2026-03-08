@@ -9,10 +9,12 @@
  *********************/
 #include "loading.h"
 #include "home.h"
+#include "wifi.h"
 #include "background.h"
 #include "custom_fonts.h"
 #include "assets/logo_background.c"
 #include "esp_log.h"
+#include "esp_wifi.h"
 #include "bap.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -22,7 +24,7 @@
  *      DEFINES
  *********************/
 static const char *TAG = "loading";
-#define LOADING_DURATION_MS 4000
+#define LOADING_DURATION_MS 1200
 #define LOADING_STEPS 100
 #define LOADING_STEP_TIME_MS (LOADING_DURATION_MS / LOADING_STEPS)
 
@@ -35,6 +37,9 @@ static lv_obj_t *loading_label;
 static lv_obj_t *logo_img;
 static lv_timer_t *loading_timer;
 static uint8_t progress_value = 0;
+static bool bap_init_started = false;
+static bool bap_init_complete = false;
+static uint32_t loading_elapsed_ms = 0;
 
 /**********************
  *  STATIC PROTOTYPES
@@ -42,6 +47,7 @@ static uint8_t progress_value = 0;
 static void loading_timer_cb(lv_timer_t *timer);
 static void finish_loading(void);
 static void bap_init_task(void *pvParameters);
+static bool loading_should_boot_to_wifi(void);
 
 /**********************
  *   GLOBAL FUNCTIONS
@@ -84,6 +90,13 @@ void loading(void)
     lv_obj_set_style_border_width(progress_bar, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(progress_bar, COLOR_BORDER, LV_PART_MAIN);
 
+    if (!bap_init_started)
+    {
+        ESP_LOGI(TAG, "Creating BAP initialization task...");
+        xTaskCreate(bap_init_task, "bap_init", 8192, NULL, 10, NULL);
+        bap_init_started = true;
+    }
+
     loading_timer = lv_timer_create(loading_timer_cb, LOADING_STEP_TIME_MS, NULL);
 }
 
@@ -93,6 +106,8 @@ void loading(void)
 
 static void loading_timer_cb(lv_timer_t *timer)
 {
+    loading_elapsed_ms += LOADING_STEP_TIME_MS;
+
     progress_value++;
 
     lv_bar_set_value(progress_bar, progress_value, LV_ANIM_ON);
@@ -104,6 +119,11 @@ static void loading_timer_cb(lv_timer_t *timer)
     // If loading is complete, transition to dashboard
     if (progress_value >= 100)
     {
+        if (!bap_init_complete && loading_elapsed_ms < (LOADING_DURATION_MS + 1500))
+        {
+            lv_label_set_text(loading_label, "Starting services...");
+            return;
+        }
         finish_loading();
     }
 }
@@ -118,9 +138,6 @@ static void bap_init_task(void *pvParameters)
     {
         ESP_LOGW(TAG, "Failed to add BAP init task to watchdog: %s", esp_err_to_name(wdt_ret));
     }
-
-    ESP_LOGI(TAG, "Waiting for system to stabilize...");
-    vTaskDelay(pdMS_TO_TICKS(2000));
 
     // Reset watchdog before BAP initialization
     if (wdt_ret == ESP_OK)
@@ -140,6 +157,8 @@ static void bap_init_task(void *pvParameters)
         ESP_LOGI(TAG, "BAP initialized successfully");
     }
 
+    bap_init_complete = true;
+
     // Remove from watchdog before deleting task
     if (wdt_ret == ESP_OK)
     {
@@ -154,9 +173,26 @@ static void finish_loading(void)
     lv_timer_del(loading_timer);
 
     lv_obj_clean(screen);
+    if (loading_should_boot_to_wifi())
+    {
+        wifi_screen_create();
+        lv_scr_load(wifi_get_screen());
+        return;
+    }
+
     home_screen_create();
     lv_scr_load(home_get_screen());
+}
 
-    ESP_LOGI(TAG, "Creating BAP initialization task...");
-    xTaskCreate(bap_init_task, "bap_init", 8192, NULL, 10, NULL);
+static bool loading_should_boot_to_wifi(void)
+{
+    wifi_config_t wifi_config = {0};
+    esp_err_t ret = esp_wifi_get_config(WIFI_IF_STA, &wifi_config);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Unable to read saved WiFi config at boot: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    return wifi_config.sta.ssid[0] == '\0';
 }

@@ -86,6 +86,14 @@ static esp_err_t price_http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
+void price_service_start(void)
+{
+    if (price_task_handle == NULL)
+    {
+        xTaskCreate(price_task, "price_fetch_task", 4096, NULL, 5, &price_task_handle);
+    }
+}
+
 void price_screen_create(void)
 {
     if (price_screen != NULL)
@@ -210,10 +218,7 @@ void price_screen_create(void)
     price_sync_selected_currency();
     apply_cached_price();
 
-    if (price_task_handle == NULL)
-    {
-        xTaskCreate(price_task, "price_fetch_task", 4096, NULL, 5, &price_task_handle);
-    }
+    price_service_start();
 }
 
 void price_screen_destroy(void)

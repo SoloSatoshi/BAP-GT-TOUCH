@@ -58,6 +58,7 @@ static void bap_ui_flush_task(void *arg);
 static void bap_ui_ensure_flush_task(void);
 static void bap_ui_cache_update(char *dst, size_t dst_size, const char *src, bool *dirty_flag);
 static bool bap_ui_cache_take_snapshot(bap_ui_cache_t *snapshot);
+static void bap_ui_cache_restore_dirty(const bap_ui_cache_t *snapshot);
 
 esp_err_t bap_parse_and_handle_message(const char *message) {
     if (message == NULL) {
@@ -220,6 +221,61 @@ static bool bap_ui_cache_take_snapshot(bap_ui_cache_t *snapshot)
     return any_dirty;
 }
 
+static void bap_ui_cache_restore_dirty(const bap_ui_cache_t *snapshot)
+{
+    if (!snapshot)
+    {
+        return;
+    }
+
+    portENTER_CRITICAL(&s_ui_cache_mux);
+    if (snapshot->hashrate_dirty)
+    {
+        s_ui_cache.hashrate_dirty = true;
+    }
+    if (snapshot->temperature_dirty)
+    {
+        s_ui_cache.temperature_dirty = true;
+    }
+    if (snapshot->power_dirty)
+    {
+        s_ui_cache.power_dirty = true;
+    }
+    if (snapshot->fan_rpm_dirty)
+    {
+        s_ui_cache.fan_rpm_dirty = true;
+    }
+    if (snapshot->shares_dirty)
+    {
+        s_ui_cache.shares_dirty = true;
+    }
+    if (snapshot->best_difficulty_dirty)
+    {
+        s_ui_cache.best_difficulty_dirty = true;
+    }
+    if (snapshot->wifi_ssid_dirty)
+    {
+        s_ui_cache.wifi_ssid_dirty = true;
+    }
+    if (snapshot->wifi_rssi_dirty)
+    {
+        s_ui_cache.wifi_rssi_dirty = true;
+    }
+    if (snapshot->wifi_ip_dirty)
+    {
+        s_ui_cache.wifi_ip_dirty = true;
+    }
+    if (snapshot->wifi_password_dirty)
+    {
+        s_ui_cache.wifi_password_dirty = true;
+    }
+    if (snapshot->block_height_dirty)
+    {
+        s_ui_cache.block_height_dirty = true;
+    }
+    portEXIT_CRITICAL(&s_ui_cache_mux);
+}
+
 static void bap_ui_flush_task(void *arg)
 {
     (void)arg;
@@ -283,6 +339,10 @@ static void bap_ui_flush_task(void *arg)
             }
 
             lvgl_port_unlock();
+        }
+        else
+        {
+            bap_ui_cache_restore_dirty(&snapshot);
         }
 
         vTaskDelay(pdMS_TO_TICKS(BAP_UI_FLUSH_INTERVAL_MS));

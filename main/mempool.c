@@ -13,13 +13,13 @@
 #include "navigation_guard.h"
 #include "lvgl_port.h"
 #include "sdkconfig.h"
+#include "time_service.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
 #include "esp_crt_bundle.h"
 #include "esp_log.h"
-#include "lwip/apps/sntp.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <stdlib.h>
@@ -76,12 +76,11 @@ static lv_obj_t *mempool_row = NULL;
 static TaskHandle_t mempool_task_handle = NULL;
 static bool mempool_netif_ready = false;
 static bool mempool_log_tuned = false;
-static bool mempool_sntp_started = false;
-
 static mempool_block_t mempool_blocks[MEMPOOL_MAX_BLOCKS];
 static int mempool_block_count = 0;
 static mempool_next_block_t mempool_next_block = {0};
 static mempool_recommended_fees_t mempool_recommended_fees = {0};
+static char current_mempool_status[24] = "LOADING...";
 
 static char mempool_http_buf[MEMPOOL_HTTP_BUF_SIZE];
 static int mempool_http_len = 0;
@@ -97,8 +96,6 @@ static bool mempool_fetch_recommended_fees(void);
 static bool mempool_ensure_netif(void);
 static bool mempool_wifi_connected(void);
 static bool mempool_ip_ready(void);
-static void mempool_start_sntp(void);
-static bool mempool_time_ready(void);
 static void mempool_set_status(const char *status);
 static void mempool_rebuild_cards(void);
 
@@ -128,6 +125,14 @@ static esp_err_t mempool_http_event_handler(esp_http_client_event_t *evt)
         }
     }
     return ESP_OK;
+}
+
+void mempool_service_start(void)
+{
+    if (mempool_task_handle == NULL)
+    {
+        xTaskCreate(mempool_task, "mempool_task", 6144, NULL, 5, &mempool_task_handle);
+    }
 }
 
 void mempool_screen_create(void)
@@ -164,7 +169,7 @@ void mempool_screen_create(void)
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 18);
 
     mempool_status_label = lv_label_create(mempool_screen);
-    lv_label_set_text(mempool_status_label, "LOADING...");
+    lv_label_set_text(mempool_status_label, current_mempool_status);
     lv_obj_set_style_text_color(mempool_status_label, (cyberpunk || woods) ? COLOR_NAV_ICON : COLOR_TEXT_SECONDARY, 0);
     lv_obj_set_style_text_opa(mempool_status_label, (lv_opa_t)192, 0);
     lv_obj_set_style_text_font(mempool_status_label, &lv_font_montserrat_16, 0);
@@ -218,10 +223,7 @@ void mempool_screen_create(void)
 
     mempool_rebuild_cards();
 
-    if (mempool_task_handle == NULL)
-    {
-        xTaskCreate(mempool_task, "mempool_task", 6144, NULL, 5, &mempool_task_handle);
-    }
+    mempool_service_start();
 }
 
 void mempool_screen_destroy(void)
@@ -284,8 +286,7 @@ static void mempool_task(void *arg)
             continue;
         }
 
-        mempool_start_sntp();
-        if (!mempool_time_ready())
+        if (!time_service_is_ready())
         {
             if (lvgl_port_lock(50))
             {
@@ -565,37 +566,22 @@ static bool mempool_ip_ready(void)
     return ip_info.ip.addr != 0;
 }
 
-static void mempool_start_sntp(void)
-{
-    if (mempool_sntp_started || sntp_enabled())
-    {
-        mempool_sntp_started = true;
-        return;
-    }
-
-    sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    sntp_setservername(0, "pool.ntp.org");
-    sntp_init();
-    mempool_sntp_started = true;
-}
-
-static bool mempool_time_ready(void)
-{
-    time_t now = time(NULL);
-    struct tm time_info;
-    localtime_r(&now, &time_info);
-    // Pre-2023 typically means SNTP hasn't synced yet.
-    return time_info.tm_year >= (2023 - 1900);
-}
-
 static void mempool_set_status(const char *status)
 {
-    if (!status || !mempool_status_label)
+    if (!status)
     {
         return;
     }
 
-    lv_label_set_text(mempool_status_label, status);
+    strncpy(current_mempool_status, status, sizeof(current_mempool_status) - 1);
+    current_mempool_status[sizeof(current_mempool_status) - 1] = '\0';
+
+    if (!mempool_status_label)
+    {
+        return;
+    }
+
+    lv_label_set_text(mempool_status_label, current_mempool_status);
 }
 
 static void mempool_rebuild_cards(void)

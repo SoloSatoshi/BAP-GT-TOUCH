@@ -39,6 +39,7 @@ static TaskHandle_t connection_monitor_task_handle = NULL;
 static void uart_send_task(void *pvParameters);
 static void uart_receive_task(void *pvParameters);
 static void connection_monitor_task(void *pvParameters);
+static void bap_request_initial_snapshot(void);
 
 esp_err_t bap_client_init(void) {
     ESP_LOGI(TAG, "BAP client initialization starting...");
@@ -403,35 +404,64 @@ static esp_err_t bap_request_system_info(void) {
     return ret;
 }
 
+static void bap_request_initial_snapshot(void)
+{
+    // Ask for the current values immediately so the UI can populate before the
+    // first subscribed updates arrive.
+    const char *params[] = {
+        "hashrate",
+        "chipTemp",
+        "power",
+        "fan_speed",
+        "shares",
+        "best_difficulty",
+        "wifi_ssid",
+        "wifi_ip",
+        "wifi_password",
+        "block_height",
+        "pool",
+        "poolPort",
+        "poolUser",
+        "deviceModel",
+        "asicModel",
+    };
+
+    for (size_t i = 0; i < sizeof(params) / sizeof(params[0]); ++i)
+    {
+        bap_client_request(params[i]);
+        vTaskDelay(pdMS_TO_TICKS(25));
+    }
+}
+
 static void uart_send_task(void *pvParameters) {
     if (subscriptions_sent) {
         ESP_LOGI(TAG, "Subscriptions already sent, exiting task");
         vTaskDelete(NULL);
         return;
     }
-    
-    // Wait 7 seconds before sending subscription
-    ESP_LOGI(TAG, "Waiting 7 seconds before sending subscription...");
-    vTaskDelay(pdMS_TO_TICKS(7000));
-    
+
+    // Short settle to let the UART task come up without adding seconds of dead time.
+    vTaskDelay(pdMS_TO_TICKS(250));
+
     bap_subscribe_hashrate();
-    vTaskDelay(pdMS_TO_TICKS(100));  // Wait a bit before next subscription
+    vTaskDelay(pdMS_TO_TICKS(30));
     bap_subscribe_temperature();
-    vTaskDelay(pdMS_TO_TICKS(100));  // Wait a bit before next subscription
+    vTaskDelay(pdMS_TO_TICKS(30));
     bap_subscribe_power();
-    vTaskDelay(pdMS_TO_TICKS(100));  // Wait a bit before next subscription
+    vTaskDelay(pdMS_TO_TICKS(30));
     bap_subscribe_fan_rpm();
-    vTaskDelay(pdMS_TO_TICKS(100));  // Wait a bit before next subscription
+    vTaskDelay(pdMS_TO_TICKS(30));
     bap_subscribe_shares();
-    vTaskDelay(pdMS_TO_TICKS(100));  // Wait a bit before next subscription
+    vTaskDelay(pdMS_TO_TICKS(30));
     bap_subscribe_best_difficulty();
-    vTaskDelay(pdMS_TO_TICKS(100));  // Wait a bit before next subscription
+    vTaskDelay(pdMS_TO_TICKS(30));
     bap_subscribe_wifi();
-    vTaskDelay(pdMS_TO_TICKS(100));  // Wait a bit before next subscription
+    vTaskDelay(pdMS_TO_TICKS(30));
     bap_subscribe_block_height();
-    vTaskDelay(pdMS_TO_TICKS(100));  // Wait a bit before next subscription
+    vTaskDelay(pdMS_TO_TICKS(30));
     bap_subscribe_wifi_password();
-    vTaskDelay(pdMS_TO_TICKS(100));  // Wait a bit
+    vTaskDelay(pdMS_TO_TICKS(30));
+    bap_request_initial_snapshot();
     bap_request_system_info();
     
     subscriptions_sent = true;

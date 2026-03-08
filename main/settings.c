@@ -27,6 +27,7 @@
 static const char *TAG = "settings_screen";
 
 static lv_obj_t *settings_screen = NULL;
+static lv_obj_t *settings_main_cont = NULL;
 static lv_obj_t *performance_low_btn = NULL;
 static lv_obj_t *performance_medium_btn = NULL;
 static lv_obj_t *performance_high_btn = NULL;
@@ -71,6 +72,7 @@ static bool weather_temperature_unit_loaded = false;
 static char current_weather_country_code[3] = "US";
 static char current_weather_postal_code[20] = "";
 static weather_temperature_unit_t current_weather_temperature_unit = WEATHER_TEMPERATURE_UNIT_F;
+static lv_coord_t settings_saved_scroll_y = 0;
 
 static const char *timezone_options =
     "UTC\n"
@@ -668,6 +670,11 @@ static void settings_reload_screen_async(void *data)
         return;
     }
 
+    if (settings_main_cont)
+    {
+        settings_saved_scroll_y = lv_obj_get_scroll_y(settings_main_cont);
+    }
+
     lv_obj_t *transition_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(transition_screen, COLOR_BACKGROUND, 0);
     lv_obj_set_style_bg_opa(transition_screen, LV_OPA_COVER, 0);
@@ -885,30 +892,30 @@ void settings_screen_create(void)
     const ui_theme_t theme = ui_theme_get_current();
     const bool cardless_theme = theme == UI_THEME_BITAXE_RED || theme == UI_THEME_WOODS;
 
-    lv_obj_t *main_cont = lv_obj_create(settings_screen);
-    lv_obj_set_size(main_cont, SCREEN_WIDTH - 60, SCREEN_HEIGHT - 100);
-    lv_obj_align(main_cont, LV_ALIGN_TOP_MID, 0, 16);
+    settings_main_cont = lv_obj_create(settings_screen);
+    lv_obj_set_size(settings_main_cont, SCREEN_WIDTH - 60, SCREEN_HEIGHT - 100);
+    lv_obj_align(settings_main_cont, LV_ALIGN_TOP_MID, 0, 16);
     if (cardless_theme)
     {
-        lv_obj_set_style_bg_color(main_cont, lv_color_black(), 0);
-        lv_obj_set_style_bg_opa(main_cont, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_shadow_width(main_cont, 0, 0);
+        lv_obj_set_style_bg_color(settings_main_cont, lv_color_black(), 0);
+        lv_obj_set_style_bg_opa(settings_main_cont, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_shadow_width(settings_main_cont, 0, 0);
     }
     else
     {
-        translucent_card_apply(main_cont, 14, LV_OPA_20);
-        lv_obj_set_style_bg_opa(main_cont, LV_OPA_COVER, 0);
+        translucent_card_apply(settings_main_cont, 14, LV_OPA_20);
+        lv_obj_set_style_bg_opa(settings_main_cont, LV_OPA_COVER, 0);
     }
-    lv_obj_set_style_border_width(main_cont, 0, 0);
-    lv_obj_set_style_border_opa(main_cont, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(main_cont, 16, 0);
-    lv_obj_add_flag(main_cont, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_clear_flag(main_cont, LV_OBJ_FLAG_SCROLL_ELASTIC);
-    lv_obj_set_scrollbar_mode(main_cont, LV_SCROLLBAR_MODE_AUTO);
-    lv_obj_set_scroll_dir(main_cont, LV_DIR_VER);
-    lv_obj_set_style_pad_bottom(main_cont, 80, 0);
+    lv_obj_set_style_border_width(settings_main_cont, 0, 0);
+    lv_obj_set_style_border_opa(settings_main_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(settings_main_cont, 16, 0);
+    lv_obj_add_flag(settings_main_cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(settings_main_cont, LV_OBJ_FLAG_SCROLL_ELASTIC);
+    lv_obj_set_scrollbar_mode(settings_main_cont, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_scroll_dir(settings_main_cont, LV_DIR_VER);
+    lv_obj_set_style_pad_bottom(settings_main_cont, 80, 0);
 
-    lv_obj_t *title_label = lv_label_create(main_cont);
+    lv_obj_t *title_label = lv_label_create(settings_main_cont);
     lv_label_set_text(title_label, "SETTINGS");
     lv_obj_set_style_text_color(title_label, COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_font(title_label, &lv_font_montserrat_28, 0);
@@ -916,7 +923,7 @@ void settings_screen_create(void)
 
     lv_coord_t section_y = SETTINGS_CONTENT_START_Y;
 
-    lv_obj_t *perf_section = lv_obj_create(main_cont);
+    lv_obj_t *perf_section = lv_obj_create(settings_main_cont);
     lv_obj_set_size(perf_section, SETTINGS_SECTION_WIDTH, 104);
     lv_obj_align(perf_section, LV_ALIGN_TOP_MID, 0, section_y);
     lv_obj_set_style_bg_opa(perf_section, LV_OPA_TRANSP, 0);
@@ -947,7 +954,7 @@ void settings_screen_create(void)
                                                   current_settings.performance_mode == PERFORMANCE_HIGH);
     section_y += 104 + SETTINGS_SECTION_GAP;
 
-    lv_obj_t *brightness_section = lv_obj_create(main_cont);
+    lv_obj_t *brightness_section = lv_obj_create(settings_main_cont);
     lv_obj_set_size(brightness_section, SETTINGS_SECTION_WIDTH, 72);
     lv_obj_align(brightness_section, LV_ALIGN_TOP_MID, 0, section_y);
     lv_obj_set_style_bg_opa(brightness_section, LV_OPA_TRANSP, 0);
@@ -984,7 +991,7 @@ void settings_screen_create(void)
     lv_obj_align(screen_off_btn, LV_ALIGN_TOP_LEFT, 520, 18);
     section_y += 72 + SETTINGS_SECTION_GAP;
 
-    lv_obj_t *currency_section = lv_obj_create(main_cont);
+    lv_obj_t *currency_section = lv_obj_create(settings_main_cont);
     lv_obj_set_size(currency_section, SETTINGS_SECTION_WIDTH, 56);
     lv_obj_align(currency_section, LV_ALIGN_TOP_MID, 0, section_y);
     lv_obj_set_style_bg_opa(currency_section, LV_OPA_TRANSP, 0);
@@ -1007,7 +1014,7 @@ void settings_screen_create(void)
     lv_obj_add_event_cb(currency_dropdown, settings_price_currency_changed, LV_EVENT_VALUE_CHANGED, NULL);
     section_y += 56 + SETTINGS_SECTION_GAP;
 
-    lv_obj_t *theme_section = lv_obj_create(main_cont);
+    lv_obj_t *theme_section = lv_obj_create(settings_main_cont);
     lv_obj_set_size(theme_section, SETTINGS_SECTION_WIDTH, 56);
     lv_obj_align(theme_section, LV_ALIGN_TOP_MID, 0, section_y);
     lv_obj_set_style_bg_opa(theme_section, LV_OPA_TRANSP, 0);
@@ -1030,7 +1037,7 @@ void settings_screen_create(void)
     lv_obj_add_event_cb(theme_dropdown, settings_theme_changed, LV_EVENT_VALUE_CHANGED, NULL);
     section_y += 56 + SETTINGS_SECTION_GAP;
 
-    lv_obj_t *fan_section = lv_obj_create(main_cont);
+    lv_obj_t *fan_section = lv_obj_create(settings_main_cont);
     lv_obj_set_size(fan_section, SETTINGS_SECTION_WIDTH, 168);
     lv_obj_align(fan_section, LV_ALIGN_TOP_MID, 0, section_y);
     lv_obj_set_style_bg_opa(fan_section, LV_OPA_TRANSP, 0);
@@ -1081,7 +1088,7 @@ void settings_screen_create(void)
     update_fan_controls();
     section_y += 168 + SETTINGS_SECTION_GAP;
 
-    lv_obj_t *weather_section = lv_obj_create(main_cont);
+    lv_obj_t *weather_section = lv_obj_create(settings_main_cont);
     lv_obj_set_size(weather_section, SETTINGS_SECTION_WIDTH, 170);
     lv_obj_align(weather_section, LV_ALIGN_TOP_MID, 0, section_y);
     lv_obj_set_style_bg_opa(weather_section, LV_OPA_TRANSP, 0);
@@ -1155,7 +1162,7 @@ void settings_screen_create(void)
     }
     section_y += 170 + SETTINGS_SECTION_GAP;
 
-    lv_obj_t *timezone_section = lv_obj_create(main_cont);
+    lv_obj_t *timezone_section = lv_obj_create(settings_main_cont);
     lv_obj_set_size(timezone_section, SETTINGS_SECTION_WIDTH, 56);
     lv_obj_align(timezone_section, LV_ALIGN_TOP_MID, 0, section_y);
     lv_obj_set_style_bg_opa(timezone_section, LV_OPA_TRANSP, 0);
@@ -1184,7 +1191,7 @@ void settings_screen_create(void)
     section_y += 56 + SETTINGS_SECTION_GAP;
 
     // OTA Update Section
-    lv_obj_t *ota_section = lv_obj_create(main_cont);
+    lv_obj_t *ota_section = lv_obj_create(settings_main_cont);
     lv_obj_set_size(ota_section, SETTINGS_SECTION_WIDTH, 160);
     lv_obj_align(ota_section, LV_ALIGN_TOP_MID, 0, section_y);
     lv_obj_set_style_bg_opa(ota_section, LV_OPA_TRANSP, 0);
@@ -1255,6 +1262,11 @@ void settings_screen_create(void)
     keyboard_theme_apply(settings_keyboard);
     lv_obj_add_flag(settings_keyboard, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_event_cb(settings_keyboard, settings_keyboard_event_cb, LV_EVENT_ALL, NULL);
+
+    if (settings_saved_scroll_y > 0)
+    {
+        lv_obj_scroll_to_y(settings_main_cont, settings_saved_scroll_y, LV_ANIM_OFF);
+    }
 }
 
 void settings_screen_destroy(void)
@@ -1276,6 +1288,7 @@ void settings_screen_destroy(void)
     {
         lv_obj_del(settings_screen);
         settings_screen = NULL;
+        settings_main_cont = NULL;
         performance_low_btn = NULL;
         performance_medium_btn = NULL;
         performance_high_btn = NULL;

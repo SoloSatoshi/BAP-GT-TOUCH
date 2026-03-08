@@ -13,6 +13,7 @@
 #include "custom_fonts.h"
 #include "lvgl_port.h"
 #include "ota_update.h"
+#include "time_service.h"
 #include "esp_log.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
@@ -448,6 +449,18 @@ static void weather_task(void *arg)
         if (!weather_ensure_netif())
         {
             weather_set_status("NETIF ERROR");
+            if (lvgl_port_lock(50))
+            {
+                weather_apply_cached();
+                lvgl_port_unlock();
+            }
+            vTaskDelay(pdMS_TO_TICKS(WEATHER_POLL_INTERVAL_MS));
+            continue;
+        }
+
+        if (!time_service_is_ready())
+        {
+            weather_set_status("SYNCING TIME");
             if (lvgl_port_lock(50))
             {
                 weather_apply_cached();
