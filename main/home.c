@@ -9,6 +9,7 @@
 #include "mempool.h"
 #include "background.h"
 #include "nav_icons.h"
+#include "navigation_guard.h"
 #include "stdio.h"
 #include "string.h"
 #include "custom_fonts.h"
@@ -76,7 +77,7 @@ static lv_obj_t *create_nav_button(lv_obj_t *parent, const char *text, lv_event_
 
     if (event_cb)
     {
-        lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, ui_navigation_guarded_click_cb, LV_EVENT_CLICKED, ui_navigation_make_user_data(event_cb));
     }
 
     return btn;
@@ -381,7 +382,7 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
 
     if (event_cb)
     {
-        lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, ui_navigation_guarded_click_cb, LV_EVENT_CLICKED, ui_navigation_make_user_data(event_cb));
     }
 
     return btn;
@@ -407,7 +408,7 @@ static lv_obj_t *create_bottom_nav_btn_img(lv_obj_t *parent, const lv_img_dsc_t 
 
     if (event_cb)
     {
-        lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, ui_navigation_guarded_click_cb, LV_EVENT_CLICKED, ui_navigation_make_user_data(event_cb));
     }
 
     return btn;

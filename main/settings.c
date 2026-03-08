@@ -9,6 +9,7 @@
 #include "mempool.h"
 #include "background.h"
 #include "nav_icons.h"
+#include "navigation_guard.h"
 #include "theme.h"
 #include "keyboard_theme.h"
 #include "stdio.h"
@@ -166,14 +167,42 @@ static lv_obj_t *create_settings_button(lv_obj_t *parent, const char *text, lv_e
     lv_obj_set_size(btn, 170, 48);
     lv_obj_set_style_bg_color(btn, active ? COLOR_ACCENT : COLOR_CARD_BG, 0);
     lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_grad_dir(btn, LV_GRAD_DIR_NONE, 0);
     lv_obj_set_style_border_width(btn, active ? 0 : 2, 0);
     lv_obj_set_style_border_color(btn, COLOR_ACCENT, 0);
     lv_obj_set_style_border_opa(btn, active ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
+    lv_obj_set_style_shadow_opa(btn, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_outline_width(btn, 0, 0);
+    lv_obj_set_style_outline_pad(btn, 0, 0);
+    lv_obj_set_style_outline_opa(btn, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_transform_width(btn, 0, 0);
+    lv_obj_set_style_transform_height(btn, 0, 0);
+    lv_obj_set_style_transform_zoom(btn, LV_IMG_ZOOM_NONE, 0);
+    lv_obj_set_style_transform_angle(btn, 0, 0);
 
     lv_obj_set_style_bg_color(btn, COLOR_ACCENT, LV_STATE_PRESSED);
     lv_obj_set_style_bg_opa(btn, LV_OPA_20, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_grad_dir(btn, LV_GRAD_DIR_NONE, LV_STATE_PRESSED);
+    lv_obj_set_style_outline_width(btn, 0, LV_STATE_PRESSED);
+    lv_obj_set_style_outline_pad(btn, 0, LV_STATE_PRESSED);
+    lv_obj_set_style_outline_opa(btn, LV_OPA_TRANSP, LV_STATE_PRESSED);
+    lv_obj_set_style_shadow_width(btn, 0, LV_STATE_PRESSED);
+    lv_obj_set_style_shadow_opa(btn, LV_OPA_TRANSP, LV_STATE_PRESSED);
+    lv_obj_set_style_transform_width(btn, 0, LV_STATE_PRESSED);
+    lv_obj_set_style_transform_height(btn, 0, LV_STATE_PRESSED);
+    lv_obj_set_style_transform_zoom(btn, LV_IMG_ZOOM_NONE, LV_STATE_PRESSED);
+    lv_obj_set_style_transform_angle(btn, 0, LV_STATE_PRESSED);
+    lv_obj_set_style_outline_width(btn, 0, LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_pad(btn, 0, LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_opa(btn, LV_OPA_TRANSP, LV_STATE_FOCUSED);
+    lv_obj_set_style_shadow_width(btn, 0, LV_STATE_FOCUSED);
+    lv_obj_set_style_shadow_opa(btn, LV_OPA_TRANSP, LV_STATE_FOCUSED);
+    lv_obj_set_style_transform_width(btn, 0, LV_STATE_FOCUSED);
+    lv_obj_set_style_transform_height(btn, 0, LV_STATE_FOCUSED);
+    lv_obj_set_style_transform_zoom(btn, LV_IMG_ZOOM_NONE, LV_STATE_FOCUSED);
+    lv_obj_set_style_transform_angle(btn, 0, LV_STATE_FOCUSED);
 
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, text);
@@ -183,7 +212,7 @@ static lv_obj_t *create_settings_button(lv_obj_t *parent, const char *text, lv_e
 
     if (event_cb)
     {
-        lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, ui_navigation_guarded_click_cb, LV_EVENT_CLICKED, ui_navigation_make_user_data(event_cb));
     }
 
     return btn;
@@ -212,7 +241,7 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
 
     if (event_cb)
     {
-        lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, ui_navigation_guarded_click_cb, LV_EVENT_CLICKED, ui_navigation_make_user_data(event_cb));
     }
 
     return btn;
@@ -238,7 +267,7 @@ static lv_obj_t *create_bottom_nav_btn_img(lv_obj_t *parent, const lv_img_dsc_t 
 
     if (event_cb)
     {
-        lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, ui_navigation_guarded_click_cb, LV_EVENT_CLICKED, ui_navigation_make_user_data(event_cb));
     }
 
     return btn;

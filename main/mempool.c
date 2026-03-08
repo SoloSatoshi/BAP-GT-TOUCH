@@ -10,6 +10,7 @@
 #include "night.h"
 #include "background.h"
 #include "nav_icons.h"
+#include "navigation_guard.h"
 #include "lvgl_port.h"
 #include "sdkconfig.h"
 #include "esp_event.h"
@@ -326,9 +327,11 @@ static bool mempool_fetch_once(void)
     mempool_next_block.valid = false;
     mempool_recommended_fees.valid = false;
     bool next_ok = mempool_fetch_next_block();
-    bool fees_ok = mempool_fetch_recommended_fees();
+    mempool_fetch_recommended_fees();
     bool mined_ok = mempool_fetch_mined_blocks();
-    return mined_ok || next_ok || fees_ok;
+    // Render whatever data is available instead of treating fee endpoint failures
+    // as a full-screen failure.
+    return mined_ok || next_ok;
 }
 
 static bool mempool_http_get(const char *url)
@@ -1231,7 +1234,7 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
 
     if (event_cb)
     {
-        lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, ui_navigation_guarded_click_cb, LV_EVENT_CLICKED, ui_navigation_make_user_data(event_cb));
     }
 
     return btn;
@@ -1257,7 +1260,7 @@ static lv_obj_t *create_bottom_nav_btn_img(lv_obj_t *parent, const lv_img_dsc_t 
 
     if (event_cb)
     {
-        lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, ui_navigation_guarded_click_cb, LV_EVENT_CLICKED, ui_navigation_make_user_data(event_cb));
     }
 
     return btn;

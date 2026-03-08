@@ -10,6 +10,7 @@
 #include "mempool.h"
 #include "background.h"
 #include "nav_icons.h"
+#include "navigation_guard.h"
 #include "theme.h"
 #include "keyboard_theme.h"
 #include "stdio.h"
@@ -79,6 +80,20 @@ static void wifi_set_connection_state(wifi_connection_state_t state);
 
 static void wifi_refresh_status_ui(void)
 {
+    if (ssid_label) {
+        char network_text[96];
+
+        if ((wifi_connection_state == WIFI_CONNECTION_STATE_CONNECTED ||
+             wifi_connection_state == WIFI_CONNECTION_STATE_CONNECTING) &&
+            current_wifi_info.ssid[0] != '\0') {
+            snprintf(network_text, sizeof(network_text), "Network: %s", current_wifi_info.ssid);
+        } else {
+            snprintf(network_text, sizeof(network_text), "Network: --");
+        }
+
+        lv_label_set_text(ssid_label, network_text);
+    }
+
     if (status_label) {
         switch (wifi_connection_state) {
             case WIFI_CONNECTION_STATE_CONNECTED:
@@ -189,7 +204,7 @@ static lv_obj_t* create_wifi_button(lv_obj_t* parent, const char* text, lv_event
     lv_obj_center(label);
     
     if(event_cb) {
-        lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, ui_navigation_guarded_click_cb, LV_EVENT_CLICKED, ui_navigation_make_user_data(event_cb));
     }
     
     return btn;
@@ -450,7 +465,7 @@ static lv_obj_t* create_bottom_nav_btn(lv_obj_t* parent, const char* symbol, lv_
     }
     
     if(event_cb) {
-        lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, ui_navigation_guarded_click_cb, LV_EVENT_CLICKED, ui_navigation_make_user_data(event_cb));
     }
     
     return btn;
@@ -475,7 +490,7 @@ static lv_obj_t* create_bottom_nav_btn_img(lv_obj_t* parent, const lv_img_dsc_t 
     lv_obj_center(img);
 
     if(event_cb) {
-        lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, ui_navigation_guarded_click_cb, LV_EVENT_CLICKED, ui_navigation_make_user_data(event_cb));
     }
 
     return btn;

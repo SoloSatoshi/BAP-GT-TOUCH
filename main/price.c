@@ -10,6 +10,7 @@
 #include "custom_fonts.h"
 #include "background.h"
 #include "nav_icons.h"
+#include "navigation_guard.h"
 #include "lvgl_port.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
@@ -685,7 +686,7 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
 
     if (event_cb)
     {
-        lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, ui_navigation_guarded_click_cb, LV_EVENT_CLICKED, ui_navigation_make_user_data(event_cb));
     }
 
     return btn;
@@ -711,7 +712,7 @@ static lv_obj_t *create_bottom_nav_btn_img(lv_obj_t *parent, const lv_img_dsc_t 
 
     if (event_cb)
     {
-        lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(btn, ui_navigation_guarded_click_cb, LV_EVENT_CLICKED, ui_navigation_make_user_data(event_cb));
     }
 
     return btn;
