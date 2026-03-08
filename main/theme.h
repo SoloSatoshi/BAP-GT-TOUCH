@@ -9,7 +9,6 @@ typedef enum {
     UI_THEME_MONOCHROME,
     UI_THEME_SPACE,
     UI_THEME_CYBERPUNK,
-    UI_THEME_WILD_FLOWER,
     UI_THEME_COUNT
 } ui_theme_t;
 
@@ -18,6 +17,8 @@ ui_theme_t ui_theme_get_current(void);
 void ui_theme_set_current(ui_theme_t theme);
 bool ui_theme_save_current(void);
 const char *ui_theme_get_options(void);
+uint16_t ui_theme_get_dropdown_index(ui_theme_t theme);
+ui_theme_t ui_theme_from_dropdown_index(uint16_t index);
 
 lv_color_t ui_theme_get_background_color(void);
 lv_color_t ui_theme_get_card_bg_color(void);

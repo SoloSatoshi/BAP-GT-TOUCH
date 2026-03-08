@@ -108,14 +108,45 @@ bool ui_theme_save_current(void)
 
 const char *ui_theme_get_options(void)
 {
-    return "Bitaxe Red\nMonochrome\nSpace\nCyberpunk\nWild Flower";
+    return "Bitaxe Red\nCyberpunk\nMonochrome\nSpace";
+}
+
+uint16_t ui_theme_get_dropdown_index(ui_theme_t theme)
+{
+    switch (theme)
+    {
+        case UI_THEME_CYBERPUNK:
+            return 1;
+        case UI_THEME_MONOCHROME:
+            return 2;
+        case UI_THEME_SPACE:
+            return 3;
+        case UI_THEME_BITAXE_RED:
+        default:
+            return 0;
+    }
+}
+
+ui_theme_t ui_theme_from_dropdown_index(uint16_t index)
+{
+    switch (index)
+    {
+        case 1:
+            return UI_THEME_CYBERPUNK;
+        case 2:
+            return UI_THEME_MONOCHROME;
+        case 3:
+            return UI_THEME_SPACE;
+        case 0:
+        default:
+            return UI_THEME_BITAXE_RED;
+    }
 }
 
 lv_color_t ui_theme_get_background_color(void)
 {
     switch (ui_theme_get_current())
     {
-        case UI_THEME_WILD_FLOWER:
         case UI_THEME_CYBERPUNK:
         case UI_THEME_SPACE:
             return lv_color_hex(0x000000);
@@ -131,8 +162,6 @@ lv_color_t ui_theme_get_card_bg_color(void)
 {
     switch (ui_theme_get_current())
     {
-        case UI_THEME_WILD_FLOWER:
-            return lv_color_hex(0x140B18);
         case UI_THEME_CYBERPUNK:
             return lv_color_hex(0x12091D);
         case UI_THEME_SPACE:
@@ -149,8 +178,6 @@ lv_color_t ui_theme_get_accent_color(void)
 {
     switch (ui_theme_get_current())
     {
-        case UI_THEME_WILD_FLOWER:
-            return lv_color_hex(0xB45CFF);
         case UI_THEME_CYBERPUNK:
             return lv_color_hex(0xFF7A1A);
         case UI_THEME_SPACE:
@@ -183,8 +210,6 @@ lv_color_t ui_theme_get_text_secondary_color(void)
 {
     switch (ui_theme_get_current())
     {
-        case UI_THEME_WILD_FLOWER:
-            return lv_color_hex(0xB45CFF);
         case UI_THEME_CYBERPUNK:
             return lv_color_hex(0xC7B7E8);
         case UI_THEME_SPACE:
@@ -206,8 +231,6 @@ lv_color_t ui_theme_get_border_color(void)
 {
     switch (ui_theme_get_current())
     {
-        case UI_THEME_WILD_FLOWER:
-            return lv_color_hex(0x1F1123);
         case UI_THEME_CYBERPUNK:
             return lv_color_hex(0x1A1027);
         case UI_THEME_SPACE:
@@ -224,8 +247,6 @@ lv_color_t ui_theme_get_nav_bg_color(void)
 {
     switch (ui_theme_get_current())
     {
-        case UI_THEME_WILD_FLOWER:
-            return lv_color_hex(0x120913);
         case UI_THEME_CYBERPUNK:
             return lv_color_hex(0x09050F);
         case UI_THEME_SPACE:
@@ -242,8 +263,6 @@ lv_color_t ui_theme_get_nav_icon_color(void)
 {
     switch (ui_theme_get_current())
     {
-        case UI_THEME_WILD_FLOWER:
-            return lv_color_hex(0xB45CFF);
         case UI_THEME_CYBERPUNK:
             return lv_color_hex(0xFF7A1A);
         case UI_THEME_SPACE:
@@ -265,7 +284,6 @@ lv_opa_t ui_theme_get_surface_fill_opa(void)
 {
     switch (ui_theme_get_current())
     {
-        case UI_THEME_WILD_FLOWER:
         case UI_THEME_CYBERPUNK:
         case UI_THEME_SPACE:
             return LV_OPA_50;
@@ -280,8 +298,6 @@ lv_color_t ui_theme_get_surface_outline_color(void)
 {
     switch (ui_theme_get_current())
     {
-        case UI_THEME_WILD_FLOWER:
-            return lv_color_hex(0xB45CFF);
         case UI_THEME_CYBERPUNK:
             return lv_color_hex(0xFF7A1A);
         case UI_THEME_MONOCHROME:
@@ -296,5 +312,5 @@ lv_color_t ui_theme_get_surface_outline_color(void)
 bool ui_theme_uses_wallpaper(void)
 {
     ui_theme_t theme = ui_theme_get_current();
-    return theme == UI_THEME_SPACE || theme == UI_THEME_CYBERPUNK || theme == UI_THEME_WILD_FLOWER;
+    return theme == UI_THEME_SPACE || theme == UI_THEME_CYBERPUNK;
 }

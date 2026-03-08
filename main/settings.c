@@ -148,11 +148,16 @@ static void settings_load_weather_temperature_unit(void);
 static void settings_save_weather_temperature_unit(weather_temperature_unit_t unit);
 static void settings_weather_set_status(const char *text, lv_color_t color);
 static lv_obj_t *create_settings_input_field(lv_obj_t *parent, const char *placeholder, const char *accepted_chars, uint32_t max_len);
+static void apply_settings_dropdown_style(lv_obj_t *dropdown);
 static void settings_ta_event_handler(lv_event_t *e);
 static void settings_keyboard_event_cb(lv_event_t *e);
 static void settings_theme_changed(lv_event_t *e);
 static void settings_reload_screen_async(void *data);
 static void settings_screen_off_clicked(lv_event_t *e);
+
+#define SETTINGS_SECTION_WIDTH 680
+#define SETTINGS_SECTION_GAP 14
+#define SETTINGS_CONTENT_START_Y 46
 
 static lv_obj_t *create_settings_button(lv_obj_t *parent, const char *text, lv_event_cb_t event_cb, bool active)
 {
@@ -536,6 +541,44 @@ static lv_obj_t *create_settings_input_field(lv_obj_t *parent, const char *place
     return ta;
 }
 
+static void apply_settings_dropdown_style(lv_obj_t *dropdown)
+{
+    if (!dropdown)
+    {
+        return;
+    }
+
+    translucent_card_apply(dropdown, 8, LV_OPA_20);
+    lv_obj_set_style_border_width(dropdown, 2, 0);
+    lv_obj_set_style_border_color(dropdown, COLOR_ACCENT, 0);
+    lv_obj_set_style_border_opa(dropdown, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_color(dropdown, COLOR_TEXT_PRIMARY, LV_PART_MAIN);
+    lv_obj_set_style_text_font(dropdown, &lv_font_montserrat_16, LV_PART_MAIN);
+    lv_obj_set_style_text_color(dropdown, COLOR_ACCENT, LV_PART_INDICATOR);
+    lv_obj_set_style_pad_right(dropdown, 18, LV_PART_MAIN);
+
+    lv_obj_t *list = lv_dropdown_get_list(dropdown);
+    if (!list)
+    {
+        return;
+    }
+
+    lv_obj_set_style_bg_color(list, COLOR_CARD_BG, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(list, ui_theme_uses_wallpaper() ? (lv_opa_t)242 : LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(list, 2, LV_PART_MAIN);
+    lv_obj_set_style_border_color(list, COLOR_ACCENT, LV_PART_MAIN);
+    lv_obj_set_style_border_opa(list, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(list, 10, LV_PART_MAIN);
+    lv_obj_set_style_text_color(list, COLOR_TEXT_PRIMARY, LV_PART_MAIN);
+    lv_obj_set_style_text_font(list, &lv_font_montserrat_16, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(list, COLOR_ACCENT, LV_PART_SELECTED);
+    lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_SELECTED);
+    lv_obj_set_style_text_color(list, COLOR_TEXT_ON_ACCENT, LV_PART_SELECTED);
+    lv_obj_set_style_border_width(list, 0, LV_PART_SELECTED);
+    lv_obj_set_style_bg_color(list, COLOR_ACCENT, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(list, LV_OPA_50, LV_PART_SCROLLBAR);
+}
+
 static void settings_ta_event_handler(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
@@ -584,9 +627,17 @@ static void settings_reload_screen_async(void *data)
         return;
     }
 
+    lv_obj_t *transition_screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(transition_screen, COLOR_BACKGROUND, 0);
+    lv_obj_set_style_bg_opa(transition_screen, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(transition_screen, 0, 0);
+    lv_obj_clear_flag(transition_screen, LV_OBJ_FLAG_SCROLLABLE);
+    lv_scr_load(transition_screen);
+
     settings_screen_destroy();
     settings_screen_create();
     lv_scr_load(settings_get_screen());
+    lv_obj_del(transition_screen);
 }
 
 static void update_fan_controls(void)
@@ -808,9 +859,11 @@ void settings_screen_create(void)
     lv_obj_set_style_text_font(title_label, &lv_font_montserrat_28, 0);
     lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 6);
 
+    lv_coord_t section_y = SETTINGS_CONTENT_START_Y;
+
     lv_obj_t *perf_section = lv_obj_create(main_cont);
-    lv_obj_set_size(perf_section, 680, 110);
-    lv_obj_align(perf_section, LV_ALIGN_TOP_MID, 0, 46);
+    lv_obj_set_size(perf_section, SETTINGS_SECTION_WIDTH, 104);
+    lv_obj_align(perf_section, LV_ALIGN_TOP_MID, 0, section_y);
     lv_obj_set_style_bg_opa(perf_section, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(perf_section, 0, 0);
     lv_obj_set_style_pad_all(perf_section, 10, 0);
@@ -837,10 +890,11 @@ void settings_screen_create(void)
                                                     current_settings.performance_mode == PERFORMANCE_MEDIUM);
     performance_high_btn = create_settings_button(perf_btn_cont, "HIGH", settings_performance_high_clicked,
                                                   current_settings.performance_mode == PERFORMANCE_HIGH);
+    section_y += 104 + SETTINGS_SECTION_GAP;
 
     lv_obj_t *brightness_section = lv_obj_create(main_cont);
-    lv_obj_set_size(brightness_section, 680, 70);
-    lv_obj_align(brightness_section, LV_ALIGN_TOP_MID, 0, 160);
+    lv_obj_set_size(brightness_section, SETTINGS_SECTION_WIDTH, 72);
+    lv_obj_align(brightness_section, LV_ALIGN_TOP_MID, 0, section_y);
     lv_obj_set_style_bg_opa(brightness_section, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(brightness_section, 0, 0);
     lv_obj_set_style_pad_all(brightness_section, 10, 0);
@@ -873,10 +927,57 @@ void settings_screen_create(void)
     screen_off_btn = create_settings_button(brightness_section, "SCREEN OFF", settings_screen_off_clicked, false);
     lv_obj_set_size(screen_off_btn, 150, 40);
     lv_obj_align(screen_off_btn, LV_ALIGN_TOP_LEFT, 520, 18);
+    section_y += 72 + SETTINGS_SECTION_GAP;
+
+    lv_obj_t *currency_section = lv_obj_create(main_cont);
+    lv_obj_set_size(currency_section, SETTINGS_SECTION_WIDTH, 56);
+    lv_obj_align(currency_section, LV_ALIGN_TOP_MID, 0, section_y);
+    lv_obj_set_style_bg_opa(currency_section, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(currency_section, 0, 0);
+    lv_obj_set_style_pad_all(currency_section, 10, 0);
+    lv_obj_clear_flag(currency_section, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *currency_title = lv_label_create(currency_section);
+    lv_label_set_text(currency_title, "Currency:");
+    lv_obj_set_style_text_color(currency_title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(currency_title, &lv_font_montserrat_18, 0);
+    lv_obj_align(currency_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    currency_dropdown = lv_dropdown_create(currency_section);
+    lv_obj_set_size(currency_dropdown, 300, 34);
+    lv_obj_align(currency_dropdown, LV_ALIGN_TOP_LEFT, 170, -4);
+    lv_dropdown_set_options(currency_dropdown, currency_options);
+    lv_dropdown_set_selected(currency_dropdown, current_settings.price_currency);
+    apply_settings_dropdown_style(currency_dropdown);
+    lv_obj_add_event_cb(currency_dropdown, settings_price_currency_changed, LV_EVENT_VALUE_CHANGED, NULL);
+    section_y += 56 + SETTINGS_SECTION_GAP;
+
+    lv_obj_t *theme_section = lv_obj_create(main_cont);
+    lv_obj_set_size(theme_section, SETTINGS_SECTION_WIDTH, 56);
+    lv_obj_align(theme_section, LV_ALIGN_TOP_MID, 0, section_y);
+    lv_obj_set_style_bg_opa(theme_section, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(theme_section, 0, 0);
+    lv_obj_set_style_pad_all(theme_section, 10, 0);
+    lv_obj_clear_flag(theme_section, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *theme_title = lv_label_create(theme_section);
+    lv_label_set_text(theme_title, "Theme:");
+    lv_obj_set_style_text_color(theme_title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(theme_title, &lv_font_montserrat_18, 0);
+    lv_obj_align(theme_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    theme_dropdown = lv_dropdown_create(theme_section);
+    lv_obj_set_size(theme_dropdown, 300, 34);
+    lv_obj_align(theme_dropdown, LV_ALIGN_TOP_LEFT, 170, -4);
+    lv_dropdown_set_options(theme_dropdown, ui_theme_get_options());
+    lv_dropdown_set_selected(theme_dropdown, ui_theme_get_dropdown_index(ui_theme_get_current()));
+    apply_settings_dropdown_style(theme_dropdown);
+    lv_obj_add_event_cb(theme_dropdown, settings_theme_changed, LV_EVENT_VALUE_CHANGED, NULL);
+    section_y += 56 + SETTINGS_SECTION_GAP;
 
     lv_obj_t *fan_section = lv_obj_create(main_cont);
-    lv_obj_set_size(fan_section, 680, 200);
-    lv_obj_align(fan_section, LV_ALIGN_TOP_MID, 0, 240);
+    lv_obj_set_size(fan_section, SETTINGS_SECTION_WIDTH, 168);
+    lv_obj_align(fan_section, LV_ALIGN_TOP_MID, 0, section_y);
     lv_obj_set_style_bg_opa(fan_section, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(fan_section, 0, 0);
     lv_obj_set_style_pad_all(fan_section, 10, 0);
@@ -923,64 +1024,11 @@ void settings_screen_create(void)
     lv_obj_align(fan_save_btn, LV_ALIGN_TOP_LEFT, 0, 115);
 
     update_fan_controls();
-
-    lv_obj_t *currency_section = lv_obj_create(main_cont);
-    lv_obj_set_size(currency_section, 680, 50);
-    lv_obj_align(currency_section, LV_ALIGN_TOP_MID, 0, 510);
-    lv_obj_set_style_bg_opa(currency_section, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(currency_section, 0, 0);
-    lv_obj_set_style_pad_all(currency_section, 10, 0);
-    lv_obj_clear_flag(currency_section, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *currency_title = lv_label_create(currency_section);
-    lv_label_set_text(currency_title, "Price Currency:");
-    lv_obj_set_style_text_color(currency_title, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_set_style_text_font(currency_title, &lv_font_montserrat_18, 0);
-    lv_obj_align(currency_title, LV_ALIGN_TOP_LEFT, 0, 0);
-
-    currency_dropdown = lv_dropdown_create(currency_section);
-    lv_obj_set_size(currency_dropdown, 300, 34);
-    lv_obj_align(currency_dropdown, LV_ALIGN_TOP_LEFT, 170, -4);
-    lv_dropdown_set_options(currency_dropdown, currency_options);
-    lv_dropdown_set_selected(currency_dropdown, current_settings.price_currency);
-    translucent_card_apply(currency_dropdown, 8, LV_OPA_20);
-    lv_obj_set_style_border_width(currency_dropdown, 2, 0);
-    lv_obj_set_style_border_color(currency_dropdown, COLOR_RED, 0);
-    lv_obj_set_style_border_opa(currency_dropdown, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(currency_dropdown, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_set_style_text_font(currency_dropdown, &lv_font_montserrat_16, 0);
-    lv_obj_add_event_cb(currency_dropdown, settings_price_currency_changed, LV_EVENT_VALUE_CHANGED, NULL);
-
-    lv_obj_t *theme_section = lv_obj_create(main_cont);
-    lv_obj_set_size(theme_section, 680, 50);
-    lv_obj_align(theme_section, LV_ALIGN_TOP_MID, 0, 570);
-    lv_obj_set_style_bg_opa(theme_section, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(theme_section, 0, 0);
-    lv_obj_set_style_pad_all(theme_section, 10, 0);
-    lv_obj_clear_flag(theme_section, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *theme_title = lv_label_create(theme_section);
-    lv_label_set_text(theme_title, "Theme:");
-    lv_obj_set_style_text_color(theme_title, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_set_style_text_font(theme_title, &lv_font_montserrat_18, 0);
-    lv_obj_align(theme_title, LV_ALIGN_TOP_LEFT, 0, 0);
-
-    theme_dropdown = lv_dropdown_create(theme_section);
-    lv_obj_set_size(theme_dropdown, 300, 34);
-    lv_obj_align(theme_dropdown, LV_ALIGN_TOP_LEFT, 170, -4);
-    lv_dropdown_set_options(theme_dropdown, ui_theme_get_options());
-    lv_dropdown_set_selected(theme_dropdown, (uint16_t)ui_theme_get_current());
-    translucent_card_apply(theme_dropdown, 8, LV_OPA_20);
-    lv_obj_set_style_border_width(theme_dropdown, 2, 0);
-    lv_obj_set_style_border_color(theme_dropdown, COLOR_RED, 0);
-    lv_obj_set_style_border_opa(theme_dropdown, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(theme_dropdown, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_set_style_text_font(theme_dropdown, &lv_font_montserrat_16, 0);
-    lv_obj_add_event_cb(theme_dropdown, settings_theme_changed, LV_EVENT_VALUE_CHANGED, NULL);
+    section_y += 168 + SETTINGS_SECTION_GAP;
 
     lv_obj_t *weather_section = lv_obj_create(main_cont);
-    lv_obj_set_size(weather_section, 680, 182);
-    lv_obj_align(weather_section, LV_ALIGN_TOP_MID, 0, 630);
+    lv_obj_set_size(weather_section, SETTINGS_SECTION_WIDTH, 170);
+    lv_obj_align(weather_section, LV_ALIGN_TOP_MID, 0, section_y);
     lv_obj_set_style_bg_opa(weather_section, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(weather_section, 0, 0);
     lv_obj_set_style_pad_all(weather_section, 10, 0);
@@ -1027,25 +1075,20 @@ void settings_screen_create(void)
     lv_label_set_text(weather_unit_title, "Temp Unit:");
     lv_obj_set_style_text_color(weather_unit_title, COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_font(weather_unit_title, &lv_font_montserrat_16, 0);
-    lv_obj_align(weather_unit_title, LV_ALIGN_TOP_LEFT, 0, 140);
+    lv_obj_align(weather_unit_title, LV_ALIGN_TOP_LEFT, 0, 128);
 
     weather_unit_dropdown = lv_dropdown_create(weather_section);
     lv_obj_set_size(weather_unit_dropdown, 100, 34);
-    lv_obj_align(weather_unit_dropdown, LV_ALIGN_TOP_LEFT, 120, 134);
+    lv_obj_align(weather_unit_dropdown, LV_ALIGN_TOP_LEFT, 120, 122);
     lv_dropdown_set_options(weather_unit_dropdown, weather_temperature_unit_options);
     lv_dropdown_set_selected(weather_unit_dropdown, current_weather_temperature_unit);
-    translucent_card_apply(weather_unit_dropdown, 8, LV_OPA_20);
-    lv_obj_set_style_border_width(weather_unit_dropdown, 2, 0);
-    lv_obj_set_style_border_color(weather_unit_dropdown, COLOR_RED, 0);
-    lv_obj_set_style_border_opa(weather_unit_dropdown, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(weather_unit_dropdown, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_set_style_text_font(weather_unit_dropdown, &lv_font_montserrat_16, 0);
+    apply_settings_dropdown_style(weather_unit_dropdown);
     lv_obj_add_event_cb(weather_unit_dropdown, settings_weather_temperature_unit_changed, LV_EVENT_VALUE_CHANGED, NULL);
 
     weather_status_label = lv_label_create(weather_section);
     lv_obj_set_style_text_color(weather_status_label, COLOR_TEXT_SECONDARY, 0);
     lv_obj_set_style_text_font(weather_status_label, &lv_font_montserrat_14, 0);
-    lv_obj_align(weather_status_label, LV_ALIGN_TOP_LEFT, 250, 142);
+    lv_obj_align(weather_status_label, LV_ALIGN_TOP_LEFT, 250, 130);
 
     if (current_weather_postal_code[0] != '\0')
     {
@@ -1055,10 +1098,11 @@ void settings_screen_create(void)
     {
         settings_weather_set_status("Enter country + postal code, then save", COLOR_TEXT_SECONDARY);
     }
+    section_y += 170 + SETTINGS_SECTION_GAP;
 
     lv_obj_t *timezone_section = lv_obj_create(main_cont);
-    lv_obj_set_size(timezone_section, 680, 50);
-    lv_obj_align(timezone_section, LV_ALIGN_TOP_MID, 0, 830);
+    lv_obj_set_size(timezone_section, SETTINGS_SECTION_WIDTH, 56);
+    lv_obj_align(timezone_section, LV_ALIGN_TOP_MID, 0, section_y);
     lv_obj_set_style_bg_opa(timezone_section, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(timezone_section, 0, 0);
     lv_obj_set_style_pad_all(timezone_section, 10, 0);
@@ -1075,23 +1119,19 @@ void settings_screen_create(void)
     lv_obj_align(timezone_dropdown, LV_ALIGN_TOP_LEFT, 140, -4);
     lv_dropdown_set_options(timezone_dropdown, timezone_options);
     lv_dropdown_set_selected(timezone_dropdown, current_timezone_index);
-    translucent_card_apply(timezone_dropdown, 8, LV_OPA_20);
-    lv_obj_set_style_border_width(timezone_dropdown, 2, 0);
-    lv_obj_set_style_border_color(timezone_dropdown, COLOR_RED, 0);
-    lv_obj_set_style_border_opa(timezone_dropdown, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(timezone_dropdown, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_set_style_text_font(timezone_dropdown, &lv_font_montserrat_16, 0);
+    apply_settings_dropdown_style(timezone_dropdown);
     lv_obj_add_event_cb(timezone_dropdown, settings_timezone_changed, LV_EVENT_VALUE_CHANGED, NULL);
 
     if (!timezone_applied)
     {
         apply_timezone_by_index(current_timezone_index);
     }
+    section_y += 56 + SETTINGS_SECTION_GAP;
 
     // OTA Update Section
     lv_obj_t *ota_section = lv_obj_create(main_cont);
-    lv_obj_set_size(ota_section, 680, 160);
-    lv_obj_align(ota_section, LV_ALIGN_TOP_MID, 0, 890);
+    lv_obj_set_size(ota_section, SETTINGS_SECTION_WIDTH, 160);
+    lv_obj_align(ota_section, LV_ALIGN_TOP_MID, 0, section_y);
     lv_obj_set_style_bg_opa(ota_section, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(ota_section, 0, 0);
     lv_obj_set_style_pad_all(ota_section, 10, 0);
@@ -1418,7 +1458,8 @@ void settings_weather_temperature_unit_changed(lv_event_t *e)
 static void settings_theme_changed(lv_event_t *e)
 {
     lv_obj_t *dropdown = lv_event_get_target(e);
-    ui_theme_t selected_theme = (ui_theme_t)lv_dropdown_get_selected(dropdown);
+    lv_dropdown_close(dropdown);
+    ui_theme_t selected_theme = ui_theme_from_dropdown_index(lv_dropdown_get_selected(dropdown));
     ui_theme_t current_theme = ui_theme_get_current();
 
     if (selected_theme == current_theme)

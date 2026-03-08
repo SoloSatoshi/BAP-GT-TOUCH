@@ -31,6 +31,8 @@ void block_screen_create(void)
         return;
     }
 
+    const bool cyberpunk = ui_theme_get_current() == UI_THEME_CYBERPUNK;
+
     block_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(block_screen, COLOR_BACKGROUND, 0);
     lv_obj_set_style_bg_opa(block_screen, LV_OPA_COVER, 0);
@@ -40,7 +42,7 @@ void block_screen_create(void)
 
     block_title_label = lv_label_create(block_screen);
     lv_label_set_text(block_title_label, "CURRENT BLOCK HEIGHT");
-    lv_obj_set_style_text_color(block_title_label, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_text_color(block_title_label, cyberpunk ? COLOR_NAV_ICON : COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_font(block_title_label, &lv_font_montserrat_20, 0);
     lv_obj_align(block_title_label, LV_ALIGN_TOP_MID, 0, 30);
 
@@ -57,8 +59,8 @@ void block_screen_create(void)
 
     block_height_shadow_label = lv_label_create(block_screen);
     lv_label_set_text(block_height_shadow_label, current_block_height_text);
-    lv_obj_set_style_text_color(block_height_shadow_label, lv_color_hex(0x4A1800), 0);
-    lv_obj_set_style_text_opa(block_height_shadow_label, LV_OPA_80, 0);
+    lv_obj_set_style_text_color(block_height_shadow_label, cyberpunk ? lv_color_hex(0x4A1800) : lv_color_black(), 0);
+    lv_obj_set_style_text_opa(block_height_shadow_label, cyberpunk ? LV_OPA_80 : LV_OPA_50, 0);
     lv_obj_set_style_text_font(block_height_shadow_label, &montserrat_140, 0);
     lv_obj_set_style_text_letter_space(block_height_shadow_label, 15, 0);
     lv_obj_set_style_text_align(block_height_shadow_label, LV_TEXT_ALIGN_CENTER, 0);
@@ -67,7 +69,7 @@ void block_screen_create(void)
 
     block_height_label = lv_label_create(block_screen);
     lv_label_set_text(block_height_label, current_block_height_text);
-    lv_obj_set_style_text_color(block_height_label, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_text_color(block_height_label, cyberpunk ? COLOR_NAV_ICON : COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_font(block_height_label, &montserrat_140, 0);
     lv_obj_set_style_text_letter_space(block_height_label, 15, 0);
     lv_obj_set_style_text_align(block_height_label, LV_TEXT_ALIGN_CENTER, 0);

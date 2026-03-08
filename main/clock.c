@@ -15,8 +15,6 @@
 
 static lv_obj_t *clock_screen = NULL;
 static lv_obj_t *clock_value_card = NULL;
-static lv_obj_t *clock_time_shadow_cont = NULL;
-static lv_obj_t *clock_time_cont = NULL;
 static lv_obj_t *clock_time_shadow_label = NULL;
 static lv_obj_t *clock_time_label = NULL;
 static lv_obj_t *clock_ampm_shadow_label = NULL;
@@ -36,6 +34,7 @@ static void clock_start_sntp(void);
 static void clock_update_time_text(void);
 static void clock_timer_cb(lv_timer_t *timer);
 static void clock_toggle_content_clicked(lv_event_t *e);
+static void clock_refresh_layout(void);
 
 void clock_screen_create(void)
 {
@@ -55,7 +54,7 @@ void clock_screen_create(void)
 
     clock_value_card = lv_obj_create(clock_screen);
     lv_obj_set_size(clock_value_card, 560, 180);
-    lv_obj_align(clock_value_card, LV_ALIGN_CENTER, 0, -28);
+    lv_obj_align(clock_value_card, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_bg_color(clock_value_card, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(clock_value_card, LV_OPA_20, 0);
     lv_obj_set_style_border_width(clock_value_card, 0, 0);
@@ -66,47 +65,29 @@ void clock_screen_create(void)
 
     if (cyberpunk)
     {
-        clock_time_shadow_cont = lv_obj_create(clock_screen);
-        lv_obj_set_size(clock_time_shadow_cont, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-        lv_obj_set_style_bg_opa(clock_time_shadow_cont, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(clock_time_shadow_cont, 0, 0);
-        lv_obj_set_style_pad_all(clock_time_shadow_cont, 0, 0);
-        lv_obj_set_style_pad_column(clock_time_shadow_cont, 10, 0);
-        lv_obj_set_flex_flow(clock_time_shadow_cont, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(clock_time_shadow_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_align(clock_time_shadow_cont, LV_ALIGN_CENTER, 4, -24);
-
-        clock_time_shadow_label = lv_label_create(clock_time_shadow_cont);
+        clock_time_shadow_label = lv_label_create(clock_screen);
         lv_label_set_text(clock_time_shadow_label, current_time_text);
         lv_obj_set_style_text_color(clock_time_shadow_label, lv_color_hex(0x4A1800), 0);
         lv_obj_set_style_text_opa(clock_time_shadow_label, LV_OPA_80, 0);
         lv_obj_set_style_text_font(clock_time_shadow_label, &montserrat_160, 0);
         lv_obj_set_style_text_letter_space(clock_time_shadow_label, 1, 0);
+        lv_obj_set_style_text_align(clock_time_shadow_label, LV_TEXT_ALIGN_CENTER, 0);
 
-        clock_ampm_shadow_label = lv_label_create(clock_time_shadow_cont);
+        clock_ampm_shadow_label = lv_label_create(clock_screen);
         lv_label_set_text(clock_ampm_shadow_label, current_ampm_text);
         lv_obj_set_style_text_color(clock_ampm_shadow_label, lv_color_hex(0x4A1800), 0);
         lv_obj_set_style_text_opa(clock_ampm_shadow_label, LV_OPA_70, 0);
         lv_obj_set_style_text_font(clock_ampm_shadow_label, &lv_font_montserrat_48, 0);
     }
 
-    clock_time_cont = lv_obj_create(clock_screen);
-    lv_obj_set_size(clock_time_cont, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_opa(clock_time_cont, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(clock_time_cont, 0, 0);
-    lv_obj_set_style_pad_all(clock_time_cont, 0, 0);
-    lv_obj_set_style_pad_column(clock_time_cont, 10, 0);
-    lv_obj_set_flex_flow(clock_time_cont, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(clock_time_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_align(clock_time_cont, LV_ALIGN_CENTER, 0, -28);
-
-    clock_time_label = lv_label_create(clock_time_cont);
+    clock_time_label = lv_label_create(clock_screen);
     lv_label_set_text(clock_time_label, current_time_text);
     lv_obj_set_style_text_color(clock_time_label, cyberpunk ? COLOR_NAV_ICON : COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_font(clock_time_label, &montserrat_160, 0);
     lv_obj_set_style_text_letter_space(clock_time_label, 1, 0);
+    lv_obj_set_style_text_align(clock_time_label, LV_TEXT_ALIGN_CENTER, 0);
 
-    clock_ampm_label = lv_label_create(clock_time_cont);
+    clock_ampm_label = lv_label_create(clock_screen);
     lv_label_set_text(clock_ampm_label, current_ampm_text);
     lv_obj_set_style_text_color(clock_ampm_label, cyberpunk ? COLOR_NAV_ICON : COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_opa(clock_ampm_label, cyberpunk ? LV_OPA_COVER : (lv_opa_t)192, 0);
@@ -118,7 +99,9 @@ void clock_screen_create(void)
     lv_obj_set_style_text_align(clock_date_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(clock_date_label, COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_font(clock_date_label, &lv_font_montserrat_24, 0);
-    lv_obj_align(clock_date_label, LV_ALIGN_CENTER, 0, 126);
+    lv_obj_align(clock_date_label, LV_ALIGN_CENTER, 0, 134);
+
+    clock_refresh_layout();
 
     clock_tap_area = lv_obj_create(clock_screen);
     lv_obj_set_size(clock_tap_area, SCREEN_WIDTH, SCREEN_HEIGHT - 64);
@@ -170,8 +153,6 @@ void clock_screen_destroy(void)
         lv_obj_del(clock_screen);
         clock_screen = NULL;
         clock_value_card = NULL;
-        clock_time_shadow_cont = NULL;
-        clock_time_cont = NULL;
         clock_time_shadow_label = NULL;
         clock_time_label = NULL;
         clock_ampm_shadow_label = NULL;
@@ -202,7 +183,7 @@ static void clock_update_time_text(void)
             hour12 = 12;
         }
         const char *ampm = (hours < 12) ? "AM" : "PM";
-        lv_snprintf(current_time_text, sizeof(current_time_text), "%02d:%02d", (int)hour12, (int)minutes);
+        lv_snprintf(current_time_text, sizeof(current_time_text), "%d:%02d", (int)hour12, (int)minutes);
         lv_snprintf(current_ampm_text, sizeof(current_ampm_text), "%s", ampm);
         lv_snprintf(current_date_text, sizeof(current_date_text), "Waiting for time sync");
     }
@@ -216,7 +197,7 @@ static void clock_update_time_text(void)
             hour12 = 12;
         }
         const char *ampm = (time_info.tm_hour < 12) ? "AM" : "PM";
-        lv_snprintf(current_time_text, sizeof(current_time_text), "%02d:%02d",
+        lv_snprintf(current_time_text, sizeof(current_time_text), "%d:%02d",
                     hour12, time_info.tm_min);
         lv_snprintf(current_ampm_text, sizeof(current_ampm_text), "%s", ampm);
         strftime(current_date_text, sizeof(current_date_text), "%A, %B %d, %Y", &time_info);
@@ -241,6 +222,31 @@ static void clock_update_time_text(void)
     if (clock_date_label)
     {
         lv_label_set_text(clock_date_label, current_date_text);
+    }
+
+    clock_refresh_layout();
+}
+
+static void clock_refresh_layout(void)
+{
+    if (clock_time_label)
+    {
+        lv_obj_align(clock_time_label, LV_ALIGN_CENTER, 0, 0);
+    }
+
+    if (clock_ampm_label && clock_time_label)
+    {
+        lv_obj_align_to(clock_ampm_label, clock_time_label, LV_ALIGN_OUT_RIGHT_MID, 12, 22);
+    }
+
+    if (clock_time_shadow_label)
+    {
+        lv_obj_align_to(clock_time_shadow_label, clock_time_label, LV_ALIGN_CENTER, 4, 4);
+    }
+
+    if (clock_ampm_shadow_label && clock_ampm_label)
+    {
+        lv_obj_align_to(clock_ampm_shadow_label, clock_ampm_label, LV_ALIGN_CENTER, 4, 4);
     }
 }
 
@@ -283,27 +289,51 @@ static void clock_toggle_content_clicked(lv_event_t *e)
         }
     }
 
-    if (clock_time_shadow_cont)
+    if (clock_time_shadow_label)
     {
         if (clock_content_hidden)
         {
-            lv_obj_add_flag(clock_time_shadow_cont, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(clock_time_shadow_label, LV_OBJ_FLAG_HIDDEN);
         }
         else
         {
-            lv_obj_clear_flag(clock_time_shadow_cont, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(clock_time_shadow_label, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
-    if (clock_time_cont)
+    if (clock_ampm_shadow_label)
     {
         if (clock_content_hidden)
         {
-            lv_obj_add_flag(clock_time_cont, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(clock_ampm_shadow_label, LV_OBJ_FLAG_HIDDEN);
         }
         else
         {
-            lv_obj_clear_flag(clock_time_cont, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(clock_ampm_shadow_label, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (clock_time_label)
+    {
+        if (clock_content_hidden)
+        {
+            lv_obj_add_flag(clock_time_label, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_clear_flag(clock_time_label, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (clock_ampm_label)
+    {
+        if (clock_content_hidden)
+        {
+            lv_obj_add_flag(clock_ampm_label, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_clear_flag(clock_ampm_label, LV_OBJ_FLAG_HIDDEN);
         }
     }
 

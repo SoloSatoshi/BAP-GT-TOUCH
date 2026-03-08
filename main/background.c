@@ -1,7 +1,6 @@
 #include "background.h"
 #include "assets/cyberpunk_wallpaper.h"
 #include "assets/space_wallpaper.h"
-#include "assets/wildflower_wallpaper.h"
 #include "theme.h"
 
 void screen_background_apply(lv_obj_t *screen)
@@ -21,10 +20,6 @@ void screen_background_apply(lv_obj_t *screen)
         if (ui_theme_get_current() == UI_THEME_CYBERPUNK)
         {
             wallpaper_src = &cyberpunk_wallpaper;
-        }
-        else if (ui_theme_get_current() == UI_THEME_WILD_FLOWER)
-        {
-            wallpaper_src = &wildflower_wallpaper;
         }
         lv_img_set_src(wallpaper, wallpaper_src);
         lv_obj_align(wallpaper, LV_ALIGN_CENTER, 0, 0);

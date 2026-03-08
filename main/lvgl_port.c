@@ -22,8 +22,9 @@ static const char *TAG = "lv_port";                      // Tag for logging
 static SemaphoreHandle_t lvgl_mux;                       // LVGL mutex for synchronization
 static TaskHandle_t lvgl_task_handle = NULL;             // Handle for the LVGL task
 static bool hot_corner_latched = false;                  // Prevent a single press from toggling screen power twice
+static bool wake_waiting_for_release = false;            // Prevent the same press from turning the screen back on
 
-#define SCREEN_POWER_HOT_CORNER_SIZE 60
+#define SCREEN_POWER_HOT_CORNER_SIZE 90
 
 #if EXAMPLE_LVGL_PORT_ROTATION_DEGREE != 0
 // Function to get the next frame buffer for double buffering
@@ -450,6 +451,11 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
         bool in_hot_corner = touchpad_x < SCREEN_POWER_HOT_CORNER_SIZE && touchpad_y < SCREEN_POWER_HOT_CORNER_SIZE;
 
         if (lcd_screen_is_off()) {
+            if (wake_waiting_for_release) {
+                data->state = LV_INDEV_STATE_RELEASED;
+                return;
+            }
+
             lcd_screen_wake();
             hot_corner_latched = true;
             data->state = LV_INDEV_STATE_RELEASED; // First touch only wakes the screen
@@ -461,6 +467,7 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
             if (!hot_corner_latched) {
                 lcd_screen_turn_off();
                 hot_corner_latched = true;
+                wake_waiting_for_release = true;
             }
             data->state = LV_INDEV_STATE_RELEASED;
             return;
@@ -471,6 +478,7 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
         ESP_LOGD(TAG, "Touch position: %d,%d", touchpad_x, touchpad_y); // Log touch position
     } else {
         hot_corner_latched = false;
+        wake_waiting_for_release = false;
         data->state = LV_INDEV_STATE_RELEASED; // Set state to released
     }
 }

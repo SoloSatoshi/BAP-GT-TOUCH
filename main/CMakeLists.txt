@@ -6,7 +6,6 @@ idf_component_register(
         "lvgl_port.c"
         "assets/space_wallpaper.c"
         "assets/cyberpunk_wallpaper.c"
-        "assets/wildflower_wallpaper.c"
         "assets/lvgl_logo.c"
         "assets/temperature_icon.c"
         "assets/fan.c"
