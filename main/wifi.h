@@ -30,6 +30,7 @@ void wifi_update_ip(const char* ip);
 void wifi_update_password(const char* password);
 bool wifi_is_connected(void);
 const char *wifi_get_current_ip(void);
+void wifi_set_post_connect_show_pool(bool enabled);
 
 // Event handlers
 void wifi_connect_clicked(lv_event_t * e);

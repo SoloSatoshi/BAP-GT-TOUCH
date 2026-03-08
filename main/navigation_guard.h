@@ -5,5 +5,6 @@
 
 void *ui_navigation_make_user_data(lv_event_cb_t cb);
 void ui_navigation_guarded_click_cb(lv_event_t *e);
+void ui_navigation_block_for_ms(uint32_t ms);
 
 #endif

@@ -676,6 +676,11 @@ void home_pool_clicked(lv_event_t *e)
     create_pool_popup();
 }
 
+void home_show_pool_popup(void)
+{
+    create_pool_popup();
+}
+
 void home_settings_clicked(lv_event_t *e)
 {
     settings_screen_create();

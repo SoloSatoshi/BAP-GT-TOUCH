@@ -27,6 +27,15 @@ static lv_event_cb_t ui_navigation_cb_from_user_data(void *data)
     return ref.cb;
 }
 
+void ui_navigation_block_for_ms(uint32_t ms)
+{
+    int64_t until_us = esp_timer_get_time() + ((int64_t)ms * 1000);
+    if (until_us > s_navigation_block_until_us)
+    {
+        s_navigation_block_until_us = until_us;
+    }
+}
+
 void ui_navigation_guarded_click_cb(lv_event_t *e)
 {
     lv_event_cb_t cb = ui_navigation_cb_from_user_data(lv_event_get_user_data(e));

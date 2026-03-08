@@ -73,6 +73,7 @@ static char current_weather_country_code[3] = "US";
 static char current_weather_postal_code[20] = "";
 static weather_temperature_unit_t current_weather_temperature_unit = WEATHER_TEMPERATURE_UNIT_F;
 static lv_coord_t settings_saved_scroll_y = 0;
+static bool settings_theme_reload_pending = false;
 
 static const char *timezone_options =
     "UTC\n"
@@ -162,6 +163,7 @@ static void settings_screen_off_clicked(lv_event_t *e);
 #define SETTINGS_SECTION_WIDTH 680
 #define SETTINGS_SECTION_GAP 14
 #define SETTINGS_CONTENT_START_Y 46
+#define SETTINGS_THEME_RELOAD_BLOCK_MS 1000
 
 static lv_obj_t *create_settings_button(lv_obj_t *parent, const char *text, lv_event_cb_t event_cb, bool active)
 {
@@ -667,6 +669,7 @@ static void settings_reload_screen_async(void *data)
 
     if (!settings_screen)
     {
+        settings_theme_reload_pending = false;
         return;
     }
 
@@ -688,6 +691,7 @@ static void settings_reload_screen_async(void *data)
     lv_scr_load(settings_get_screen());
 
     lv_obj_del(transition_screen);
+    settings_theme_reload_pending = false;
 }
 
 static void update_fan_controls(void)
@@ -1525,6 +1529,11 @@ void settings_weather_temperature_unit_changed(lv_event_t *e)
 
 static void settings_theme_changed(lv_event_t *e)
 {
+    if (settings_theme_reload_pending)
+    {
+        return;
+    }
+
     lv_obj_t *dropdown = lv_event_get_target(e);
     lv_dropdown_close(dropdown);
     ui_theme_t selected_theme = ui_theme_from_dropdown_index(lv_dropdown_get_selected(dropdown));
@@ -1535,6 +1544,8 @@ static void settings_theme_changed(lv_event_t *e)
         return;
     }
 
+    settings_theme_reload_pending = true;
+    ui_navigation_block_for_ms(SETTINGS_THEME_RELOAD_BLOCK_MS);
     ui_theme_set_current(selected_theme);
     ui_theme_save_current();
     lv_async_call(settings_reload_screen_async, NULL);

@@ -51,6 +51,7 @@ static bool wifi_connect_pending = false;
 static esp_netif_t *wifi_sta_netif = NULL;
 static bool wifi_bap_ssid_received = false;
 static bool wifi_bap_password_received = false;
+static bool wifi_show_pool_after_connect = false;
 
 typedef enum {
     WIFI_CONNECTION_STATE_DISCONNECTED = 0,
@@ -350,16 +351,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
     if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        // Don't update IP address here - use BAP-provided IP instead
-        // snprintf(current_wifi_info.ip_address, sizeof(current_wifi_info.ip_address), IPSTR, IP2STR(&event->ip_info.ip));
-        LV_UNUSED(event);
+        snprintf(current_wifi_info.ip_address, sizeof(current_wifi_info.ip_address), IPSTR, IP2STR(&event->ip_info.ip));
         wifi_set_connection_state(WIFI_CONNECTION_STATE_CONNECTED);
-        // Don't update IP label here - will be updated via BAP protocol
-        // if (ip_label) {
-        //     char ip_text[32];
-        //     snprintf(ip_text, sizeof(ip_text), "IP: %s", current_wifi_info.ip_address);
-        //     lv_label_set_text(ip_label, ip_text);
-        // }
         return;
     }
 }
@@ -932,6 +925,11 @@ const char *wifi_get_current_ip(void)
     return current_wifi_info.ip_address;
 }
 
+void wifi_set_post_connect_show_pool(bool enabled)
+{
+    wifi_show_pool_after_connect = enabled;
+}
+
 lv_obj_t* wifi_get_screen(void)
 {
     return wifi_screen;
@@ -941,6 +939,17 @@ lv_obj_t* wifi_get_screen(void)
 void wifi_task_handler(void)
 {
     wifi_check_scan_completion();
+
+    if (wifi_show_pool_after_connect &&
+        wifi_connection_state == WIFI_CONNECTION_STATE_CONNECTED)
+    {
+        wifi_show_pool_after_connect = false;
+        home_screen_create();
+        lv_scr_load(home_get_screen());
+        wifi_screen_destroy();
+        home_show_pool_popup();
+        return;
+    }
 
     if (wifi_connection_state == WIFI_CONNECTION_STATE_CONNECTING &&
         wifi_connect_deadline_us > 0 &&

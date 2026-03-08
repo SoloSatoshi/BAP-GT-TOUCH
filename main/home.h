@@ -57,6 +57,7 @@ void home_update_pool_info(const pool_info_t* pool_info);
 // Event handlers
 void home_hardware_clicked(lv_event_t * e);
 void home_pool_clicked(lv_event_t * e);
+void home_show_pool_popup(void);
 void home_settings_clicked(lv_event_t * e);
 void home_night_clicked(lv_event_t * e);
 void home_wifi_clicked(lv_event_t * e);

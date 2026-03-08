@@ -175,6 +175,7 @@ static void finish_loading(void)
     lv_obj_clean(screen);
     if (loading_should_boot_to_wifi())
     {
+        wifi_set_post_connect_show_pool(true);
         wifi_screen_create();
         lv_scr_load(wifi_get_screen());
         return;
