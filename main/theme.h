@@ -6,9 +6,10 @@
 
 typedef enum {
     UI_THEME_BITAXE_RED = 0,
+    UI_THEME_CYBERPUNK,
     UI_THEME_MONOCHROME,
     UI_THEME_SPACE,
-    UI_THEME_CYBERPUNK,
+    UI_THEME_WOODS,
     UI_THEME_COUNT
 } ui_theme_t;
 

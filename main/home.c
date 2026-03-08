@@ -8,6 +8,7 @@
 #include "weather.h"
 #include "mempool.h"
 #include "background.h"
+#include "nav_icons.h"
 #include "stdio.h"
 #include "string.h"
 #include "custom_fonts.h"
@@ -105,6 +106,9 @@ static void create_hardware_popup(void)
     lv_obj_set_style_bg_color(popup_cont, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_grad_color(popup_cont, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(popup_cont, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(popup_cont, 2, 0);
+    lv_obj_set_style_border_color(popup_cont, COLOR_ACCENT, 0);
+    lv_obj_set_style_border_opa(popup_cont, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(popup_cont, 24, 0);
     lv_obj_add_flag(popup_cont, LV_OBJ_FLAG_CLICKABLE);
 
@@ -190,6 +194,9 @@ static void create_pool_popup(void)
     lv_obj_set_style_bg_color(popup_cont, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_grad_color(popup_cont, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(popup_cont, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(popup_cont, 2, 0);
+    lv_obj_set_style_border_color(popup_cont, COLOR_ACCENT, 0);
+    lv_obj_set_style_border_opa(popup_cont, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(popup_cont, 24, 0);
     lv_obj_add_flag(popup_cont, LV_OBJ_FLAG_CLICKABLE);
 
@@ -363,11 +370,14 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
-    lv_obj_t *label = lv_label_create(btn);
-    lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
-    lv_obj_center(label);
+    if (!nav_icon_render(btn, symbol, COLOR_NAV_ICON))
+    {
+        lv_obj_t *label = lv_label_create(btn);
+        lv_label_set_text(label, symbol);
+        lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
+        lv_obj_center(label);
+    }
 
     if (event_cb)
     {
@@ -424,6 +434,8 @@ void home_screen_create(void)
     lv_obj_set_style_bg_opa(main_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(main_cont, 0, 0);
     lv_obj_set_style_border_opa(main_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_shadow_width(main_cont, 0, 0);
+    lv_obj_set_style_shadow_opa(main_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(main_cont, 16, 0);
     lv_obj_set_style_outline_width(main_cont, 0, 0);
     lv_obj_set_style_outline_opa(main_cont, LV_OPA_TRANSP, 0);
@@ -602,11 +614,11 @@ void home_screen_create(void)
     create_bottom_nav_btn_img(bottom_nav, &cube_solid_full, home_block_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &cubes_solid_full, home_mempool_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &clock_solid_full, home_clock_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "$", home_price_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "W", home_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_BITCOIN, home_price_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_WEATHER, home_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_CHART, home_night_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, home_wifi_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, home_settings_clicked, false);
-    create_bottom_nav_btn(bottom_nav, LV_SYMBOL_EYE_OPEN, home_night_clicked, false);
 
     apply_cached_home_values();
 }

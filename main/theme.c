@@ -108,7 +108,7 @@ bool ui_theme_save_current(void)
 
 const char *ui_theme_get_options(void)
 {
-    return "Bitaxe Red\nCyberpunk\nMonochrome\nSpace";
+    return "Bitaxe Red\nCyberpunk\nMonochrome\nSpace\nWoods";
 }
 
 uint16_t ui_theme_get_dropdown_index(ui_theme_t theme)
@@ -121,6 +121,8 @@ uint16_t ui_theme_get_dropdown_index(ui_theme_t theme)
             return 2;
         case UI_THEME_SPACE:
             return 3;
+        case UI_THEME_WOODS:
+            return 4;
         case UI_THEME_BITAXE_RED:
         default:
             return 0;
@@ -137,6 +139,8 @@ ui_theme_t ui_theme_from_dropdown_index(uint16_t index)
             return UI_THEME_MONOCHROME;
         case 3:
             return UI_THEME_SPACE;
+        case 4:
+            return UI_THEME_WOODS;
         case 0:
         default:
             return UI_THEME_BITAXE_RED;
@@ -149,6 +153,7 @@ lv_color_t ui_theme_get_background_color(void)
     {
         case UI_THEME_CYBERPUNK:
         case UI_THEME_SPACE:
+        case UI_THEME_WOODS:
             return lv_color_hex(0x000000);
         case UI_THEME_MONOCHROME:
             return lv_color_hex(0x000000);
@@ -166,6 +171,8 @@ lv_color_t ui_theme_get_card_bg_color(void)
             return lv_color_hex(0x12091D);
         case UI_THEME_SPACE:
             return lv_color_hex(0x0F1218);
+        case UI_THEME_WOODS:
+            return lv_color_hex(0x0E0C09);
         case UI_THEME_MONOCHROME:
             return lv_color_hex(0x101010);
         case UI_THEME_BITAXE_RED:
@@ -182,6 +189,8 @@ lv_color_t ui_theme_get_accent_color(void)
             return lv_color_hex(0xFF7A1A);
         case UI_THEME_SPACE:
             return lv_color_hex(0x7EC8FF);
+        case UI_THEME_WOODS:
+            return lv_color_hex(0x8A5A30);
         case UI_THEME_MONOCHROME:
             return lv_color_hex(0xFFFFFF);
         case UI_THEME_BITAXE_RED:
@@ -214,6 +223,8 @@ lv_color_t ui_theme_get_text_secondary_color(void)
             return lv_color_hex(0xC7B7E8);
         case UI_THEME_SPACE:
             return lv_color_hex(0xA3A3A3);
+        case UI_THEME_WOODS:
+            return lv_color_hex(0xB8AA98);
         case UI_THEME_MONOCHROME:
             return lv_color_hex(0xB8B8B8);
         case UI_THEME_BITAXE_RED:
@@ -235,6 +246,8 @@ lv_color_t ui_theme_get_border_color(void)
             return lv_color_hex(0x1A1027);
         case UI_THEME_SPACE:
             return lv_color_hex(0x1A1D24);
+        case UI_THEME_WOODS:
+            return lv_color_hex(0x1E1711);
         case UI_THEME_MONOCHROME:
             return lv_color_hex(0x3A3A3A);
         case UI_THEME_BITAXE_RED:
@@ -251,6 +264,8 @@ lv_color_t ui_theme_get_nav_bg_color(void)
             return lv_color_hex(0x09050F);
         case UI_THEME_SPACE:
             return lv_color_hex(0x0C0F14);
+        case UI_THEME_WOODS:
+            return lv_color_hex(0x090806);
         case UI_THEME_MONOCHROME:
             return lv_color_hex(0x080808);
         case UI_THEME_BITAXE_RED:
@@ -267,6 +282,8 @@ lv_color_t ui_theme_get_nav_icon_color(void)
             return lv_color_hex(0xFF7A1A);
         case UI_THEME_SPACE:
             return lv_color_hex(0x7EC8FF);
+        case UI_THEME_WOODS:
+            return lv_color_hex(0x8A5A30);
         case UI_THEME_MONOCHROME:
             return lv_color_hex(0xFFFFFF);
         case UI_THEME_BITAXE_RED:
@@ -287,6 +304,8 @@ lv_opa_t ui_theme_get_surface_fill_opa(void)
         case UI_THEME_CYBERPUNK:
         case UI_THEME_SPACE:
             return LV_OPA_50;
+        case UI_THEME_WOODS:
+            return LV_OPA_TRANSP;
         case UI_THEME_MONOCHROME:
         case UI_THEME_BITAXE_RED:
         default:
@@ -303,6 +322,9 @@ lv_color_t ui_theme_get_surface_outline_color(void)
         case UI_THEME_MONOCHROME:
             return lv_color_hex(0xD9D9D9);
         case UI_THEME_SPACE:
+            return lv_color_hex(0xFFFFFF);
+        case UI_THEME_WOODS:
+            return lv_color_hex(0x8A5A30);
         case UI_THEME_BITAXE_RED:
         default:
             return lv_color_hex(0xFFFFFF);
@@ -312,5 +334,5 @@ lv_color_t ui_theme_get_surface_outline_color(void)
 bool ui_theme_uses_wallpaper(void)
 {
     ui_theme_t theme = ui_theme_get_current();
-    return theme == UI_THEME_SPACE || theme == UI_THEME_CYBERPUNK;
+    return theme == UI_THEME_SPACE || theme == UI_THEME_CYBERPUNK || theme == UI_THEME_WOODS;
 }

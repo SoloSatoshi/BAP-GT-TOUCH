@@ -9,6 +9,8 @@
 #include "weather.h"
 #include "mempool.h"
 #include "background.h"
+#include "nav_icons.h"
+#include "theme.h"
 #include "keyboard_theme.h"
 #include "stdio.h"
 #include "string.h"
@@ -218,10 +220,12 @@ static lv_obj_t* create_ssid_dropdown(lv_obj_t* parent)
     lv_dropdown_set_options(dd, "Select Network");
     translucent_card_apply(dd, 8, LV_OPA_20);
     lv_obj_set_style_border_width(dd, 2, 0);
-    lv_obj_set_style_border_color(dd, COLOR_RED, 0);
+    lv_obj_set_style_border_color(dd, COLOR_ACCENT, 0);
     lv_obj_set_style_border_opa(dd, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(dd, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_set_style_text_font(dd, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(dd, COLOR_TEXT_PRIMARY, LV_PART_MAIN);
+    lv_obj_set_style_text_font(dd, &lv_font_montserrat_16, LV_PART_MAIN);
+    lv_obj_set_style_text_color(dd, COLOR_ACCENT, LV_PART_INDICATOR);
+    lv_obj_set_style_pad_right(dd, 18, LV_PART_MAIN);
     
     // Style the dropdown list
     lv_obj_t * list = lv_dropdown_get_list(dd);
@@ -230,10 +234,29 @@ static lv_obj_t* create_ssid_dropdown(lv_obj_t* parent)
         lv_obj_set_height(list, 260);
         lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
         lv_obj_set_scroll_dir(list, LV_DIR_VER);
-        translucent_card_apply(list, 8, LV_OPA_30);
-        lv_obj_set_style_border_width(list, 0, 0);
-        lv_obj_set_style_border_opa(list, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_text_color(list, COLOR_TEXT_PRIMARY, 0);
+        lv_obj_set_style_bg_color(list, COLOR_CARD_BG, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(list, ui_theme_uses_wallpaper() ? (lv_opa_t)242 : LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_width(list, 2, LV_PART_MAIN);
+        lv_obj_set_style_border_color(list, COLOR_ACCENT, LV_PART_MAIN);
+        lv_obj_set_style_border_opa(list, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_radius(list, 10, LV_PART_MAIN);
+        lv_obj_set_style_text_color(list, COLOR_TEXT_PRIMARY, LV_PART_MAIN);
+        lv_obj_set_style_text_font(list, &lv_font_montserrat_16, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(list, COLOR_ACCENT, LV_PART_SELECTED);
+        lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_SELECTED);
+        lv_obj_set_style_text_color(list, COLOR_TEXT_ON_ACCENT, LV_PART_SELECTED);
+        lv_obj_set_style_border_width(list, 0, LV_PART_SELECTED);
+        lv_obj_set_style_bg_color(list, COLOR_ACCENT, LV_PART_SELECTED | LV_STATE_CHECKED);
+        lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_SELECTED | LV_STATE_CHECKED);
+        lv_obj_set_style_text_color(list, COLOR_TEXT_ON_ACCENT, LV_PART_SELECTED | LV_STATE_CHECKED);
+        lv_obj_set_style_border_width(list, 0, LV_PART_SELECTED | LV_STATE_CHECKED);
+        lv_obj_set_style_bg_color(list, COLOR_ACCENT, LV_PART_SELECTED | LV_STATE_PRESSED);
+        lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_SELECTED | LV_STATE_PRESSED);
+        lv_obj_set_style_text_color(list, COLOR_TEXT_ON_ACCENT, LV_PART_SELECTED | LV_STATE_PRESSED);
+        lv_obj_set_style_border_width(list, 0, LV_PART_SELECTED | LV_STATE_PRESSED);
+        lv_obj_set_style_bg_color(list, COLOR_ACCENT, LV_PART_SCROLLBAR);
+        lv_obj_set_style_bg_opa(list, (lv_opa_t)160, LV_PART_SCROLLBAR);
+        lv_obj_set_style_radius(list, LV_RADIUS_CIRCLE, LV_PART_SCROLLBAR);
     }
     
     return dd;
@@ -418,11 +441,13 @@ static lv_obj_t* create_bottom_nav_btn(lv_obj_t* parent, const char* symbol, lv_
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
     
-    lv_obj_t * label = lv_label_create(btn);
-    lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
-    lv_obj_center(label);
+    if (!nav_icon_render(btn, symbol, COLOR_NAV_ICON)) {
+        lv_obj_t * label = lv_label_create(btn);
+        lv_label_set_text(label, symbol);
+        lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
+        lv_obj_center(label);
+    }
     
     if(event_cb) {
         lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
@@ -531,10 +556,22 @@ void wifi_screen_create(void)
     lv_obj_set_scrollbar_mode(wifi_screen, LV_SCROLLBAR_MODE_OFF);
     
     // Create main container - leave space for bottom nav
+    const ui_theme_t theme = ui_theme_get_current();
+    const bool cardless_theme = theme == UI_THEME_BITAXE_RED || theme == UI_THEME_WOODS;
+
     lv_obj_t * main_cont = lv_obj_create(wifi_screen);
     lv_obj_set_size(main_cont, SCREEN_WIDTH - 60, SCREEN_HEIGHT - 100);
     lv_obj_align(main_cont, LV_ALIGN_TOP_MID, 0, 16);
-    translucent_card_apply(main_cont, 14, LV_OPA_20);
+    if (cardless_theme)
+    {
+        lv_obj_set_style_bg_color(main_cont, lv_color_black(), 0);
+        lv_obj_set_style_bg_opa(main_cont, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_shadow_width(main_cont, 0, 0);
+    }
+    else
+    {
+        translucent_card_apply(main_cont, 14, LV_OPA_20);
+    }
     lv_obj_set_style_border_width(main_cont, 0, 0);
     lv_obj_set_style_border_opa(main_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(main_cont, 16, 0);
@@ -712,11 +749,11 @@ void wifi_screen_create(void)
     create_bottom_nav_btn_img(bottom_nav, &cube_solid_full, wifi_block_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &cubes_solid_full, wifi_mempool_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &clock_solid_full, wifi_clock_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "$", wifi_price_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "W", wifi_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_BITCOIN, wifi_price_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_WEATHER, wifi_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_CHART, wifi_night_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, NULL, true);  // WiFi is active
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, wifi_settings_clicked, false);
-    create_bottom_nav_btn(bottom_nav, LV_SYMBOL_EYE_OPEN, wifi_night_clicked, false);
 
     if (wifi_connect_pending) {
         wifi_connection_state = WIFI_CONNECTION_STATE_CONNECTING;

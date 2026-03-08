@@ -9,6 +9,7 @@
 #include "settings.h"
 #include "night.h"
 #include "background.h"
+#include "nav_icons.h"
 #include "lvgl_port.h"
 #include "sdkconfig.h"
 #include "esp_event.h"
@@ -151,17 +152,19 @@ void mempool_screen_create(void)
     lv_obj_clear_flag(mempool_screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(mempool_screen, LV_SCROLLBAR_MODE_OFF);
 
-    const bool cyberpunk = ui_theme_get_current() == UI_THEME_CYBERPUNK;
+    const ui_theme_t current_theme = ui_theme_get_current();
+    const bool cyberpunk = current_theme == UI_THEME_CYBERPUNK;
+    const bool woods = current_theme == UI_THEME_WOODS;
 
     lv_obj_t *title = lv_label_create(mempool_screen);
     lv_label_set_text(title, "LATEST BLOCKS");
-    lv_obj_set_style_text_color(title, cyberpunk ? COLOR_NAV_ICON : COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_color(title, (cyberpunk || woods) ? COLOR_NAV_ICON : COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 18);
 
     mempool_status_label = lv_label_create(mempool_screen);
     lv_label_set_text(mempool_status_label, "LOADING...");
-    lv_obj_set_style_text_color(mempool_status_label, cyberpunk ? COLOR_NAV_ICON : COLOR_TEXT_SECONDARY, 0);
+    lv_obj_set_style_text_color(mempool_status_label, (cyberpunk || woods) ? COLOR_NAV_ICON : COLOR_TEXT_SECONDARY, 0);
     lv_obj_set_style_text_opa(mempool_status_label, (lv_opa_t)192, 0);
     lv_obj_set_style_text_font(mempool_status_label, &lv_font_montserrat_16, 0);
     lv_obj_align(mempool_status_label, LV_ALIGN_TOP_MID, 0, 48);
@@ -206,11 +209,11 @@ void mempool_screen_create(void)
     create_bottom_nav_btn_img(bottom_nav, &cube_solid_full, mempool_block_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &cubes_solid_full, NULL, true);
     create_bottom_nav_btn_img(bottom_nav, &clock_solid_full, mempool_clock_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "$", mempool_price_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "W", mempool_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_BITCOIN, mempool_price_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_WEATHER, mempool_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_CHART, mempool_night_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, mempool_wifi_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, mempool_settings_clicked, false);
-    create_bottom_nav_btn(bottom_nav, LV_SYMBOL_EYE_OPEN, mempool_night_clicked, false);
 
     mempool_rebuild_cards();
 
@@ -607,19 +610,26 @@ static void mempool_rebuild_cards(void)
     }
 
     const ui_theme_t theme = ui_theme_get_current();
+    const bool bitaxe_red = theme == UI_THEME_BITAXE_RED;
     const bool monochrome = theme == UI_THEME_MONOCHROME;
     const bool space = theme == UI_THEME_SPACE;
     const bool cyberpunk = theme == UI_THEME_CYBERPUNK;
-    const lv_color_t color_height = monochrome ? COLOR_TEXT_PRIMARY : (cyberpunk ? COLOR_NAV_ICON : lv_color_hex(0x00E5FF));
-    const lv_color_t color_card = cyberpunk ? lv_color_black() : ((monochrome || space) ? ui_theme_get_surface_fill_color() : lv_color_hex(0x0B1E3A));
-    const lv_color_t color_mid = cyberpunk ? lv_color_black() : ((monochrome || space) ? ui_theme_get_surface_fill_color() : lv_color_hex(0x1E5BFF));
-    const lv_color_t color_bottom = cyberpunk ? lv_color_black() : ((monochrome || space) ? ui_theme_get_surface_fill_color() : lv_color_hex(0x7C3BFF));
-    const lv_color_t color_fee = monochrome ? lv_color_hex(0xD9D9D9) : (cyberpunk ? COLOR_NAV_ICON : lv_color_hex(0xFFE600));
+    const bool woods = theme == UI_THEME_WOODS;
+    const lv_color_t color_height = monochrome ? COLOR_TEXT_PRIMARY : ((cyberpunk || woods) ? COLOR_NAV_ICON : (bitaxe_red ? lv_color_hex(0x00F0FF) : lv_color_hex(0x00E5FF)));
+    const lv_color_t color_card = (cyberpunk || woods) ? lv_color_black() : ((monochrome || space) ? ui_theme_get_surface_fill_color() : (bitaxe_red ? lv_color_hex(0x19152E) : lv_color_hex(0x0B1E3A)));
+    const lv_color_t color_card_grad = (cyberpunk || woods) ? lv_color_black() : ((monochrome || space) ? ui_theme_get_surface_fill_color() : (bitaxe_red ? lv_color_hex(0x111E46) : lv_color_hex(0x0B1E3A)));
+    const lv_color_t color_mid = (cyberpunk || woods) ? lv_color_black() : ((monochrome || space) ? ui_theme_get_surface_fill_color() : (bitaxe_red ? lv_color_hex(0xB022FF) : lv_color_hex(0x1E5BFF)));
+    const lv_color_t color_mid_grad = (cyberpunk || woods) ? lv_color_black() : ((monochrome || space) ? ui_theme_get_surface_fill_color() : (bitaxe_red ? lv_color_hex(0x2A78FF) : lv_color_hex(0x143FBA)));
+    const lv_color_t color_bottom = (cyberpunk || woods) ? lv_color_black() : ((monochrome || space) ? ui_theme_get_surface_fill_color() : (bitaxe_red ? lv_color_hex(0x1E63FF) : lv_color_hex(0x7C3BFF)));
+    const lv_color_t color_bottom_grad = (cyberpunk || woods) ? lv_color_black() : ((monochrome || space) ? ui_theme_get_surface_fill_color() : (bitaxe_red ? lv_color_hex(0x1546D8) : lv_color_hex(0x6126D8)));
+    const lv_color_t color_fee = monochrome ? lv_color_hex(0xD9D9D9) : ((cyberpunk || woods) ? COLOR_NAV_ICON : lv_color_hex(0xFFE600));
     const int row_h = lv_obj_get_height(mempool_row);
     const int wrap_top_offset = 38;
     const int wrap_pool_h = 24;
     const int wrap_bottom_pad = 8;
     const int wrap_extra = wrap_top_offset + wrap_pool_h + wrap_bottom_pad;
+    const int card_x = 0;
+    const int card_w = CARD_W;
     int card_h = row_h - wrap_extra;
     if (card_h > CARD_H)
     {
@@ -629,7 +639,6 @@ static void mempool_rebuild_cards(void)
     {
         card_h = 200;
     }
-
     if (mempool_next_block.valid)
     {
         lv_obj_t *card_wrap = lv_obj_create(mempool_row);
@@ -656,22 +665,22 @@ static void mempool_rebuild_cards(void)
 
         lv_obj_t *height_label = lv_label_create(card_wrap);
         lv_label_set_text(height_label, "NEXT BLOCK");
-        lv_obj_set_style_text_color(height_label, cyberpunk ? COLOR_TEXT_PRIMARY : color_height, 0);
+        lv_obj_set_style_text_color(height_label, cyberpunk ? COLOR_NAV_ICON : color_height, 0);
         lv_obj_set_style_text_font(height_label, &lv_font_montserrat_20, 0);
         lv_obj_align(height_label, LV_ALIGN_TOP_MID, 0, 2);
 
         lv_obj_t *card = lv_obj_create(card_wrap);
-        lv_obj_set_size(card, CARD_W, card_h);
-        lv_obj_align(card, LV_ALIGN_TOP_MID, 0, wrap_top_offset);
+        lv_obj_set_size(card, card_w, card_h);
+        lv_obj_set_pos(card, card_x, wrap_top_offset);
         lv_obj_set_style_radius(card, cyberpunk ? 20 : 8, 0);
         lv_obj_set_style_bg_color(card, color_card, 0);
-        lv_obj_set_style_bg_grad_color(card, color_card, 0);
+        lv_obj_set_style_bg_grad_color(card, color_card_grad, 0);
         lv_obj_set_style_bg_grad_dir(card, LV_GRAD_DIR_VER, 0);
-        lv_obj_set_style_bg_opa(card, cyberpunk ? LV_OPA_50 : (space ? LV_OPA_70 : LV_OPA_COVER), 0);
-        lv_obj_set_style_border_width(card, (monochrome || space || cyberpunk) ? 2 : 0, 0);
-        lv_obj_set_style_border_color(card, (space || cyberpunk) ? COLOR_NAV_ICON : ui_theme_get_surface_outline_color(), 0);
-        lv_obj_set_style_border_opa(card, (monochrome || space || cyberpunk) ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
-        lv_obj_set_style_shadow_width(card, cyberpunk ? 0 : 12, 0);
+        lv_obj_set_style_bg_opa(card, cyberpunk ? LV_OPA_50 : (space ? LV_OPA_70 : (woods ? LV_OPA_70 : LV_OPA_COVER)), 0);
+        lv_obj_set_style_border_width(card, (monochrome || space || cyberpunk || woods) ? 2 : 0, 0);
+        lv_obj_set_style_border_color(card, (space || cyberpunk || woods) ? COLOR_NAV_ICON : ui_theme_get_surface_outline_color(), 0);
+        lv_obj_set_style_border_opa(card, (monochrome || space || cyberpunk || woods) ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_shadow_width(card, (cyberpunk || woods) ? 0 : 12, 0);
         lv_obj_set_style_shadow_color(card, lv_color_hex(0x02060D), 0);
         lv_obj_set_style_shadow_opa(card, LV_OPA_30, 0);
         lv_obj_set_style_shadow_ofs_y(card, 4, 0);
@@ -687,13 +696,13 @@ static void mempool_rebuild_cards(void)
         }
 
         lv_obj_t *mid = lv_obj_create(card);
-        lv_obj_set_size(mid, CARD_W, content_h);
-        lv_obj_align(mid, LV_ALIGN_TOP_MID, 0, 0);
+        lv_obj_set_size(mid, card_w, content_h);
+        lv_obj_set_pos(mid, 0, 0);
         lv_obj_set_style_radius(mid, cyberpunk ? 20 : 8, 0);
         lv_obj_set_style_bg_color(mid, color_mid, 0);
-        lv_obj_set_style_bg_grad_color(mid, (monochrome || space || cyberpunk) ? color_mid : lv_color_hex(0x143FBA), 0);
+        lv_obj_set_style_bg_grad_color(mid, color_mid_grad, 0);
         lv_obj_set_style_bg_grad_dir(mid, LV_GRAD_DIR_VER, 0);
-        lv_obj_set_style_bg_opa(mid, (monochrome || space || cyberpunk) ? LV_OPA_TRANSP : LV_OPA_60, 0);
+        lv_obj_set_style_bg_opa(mid, (monochrome || space || cyberpunk || woods) ? LV_OPA_TRANSP : (bitaxe_red ? LV_OPA_COVER : LV_OPA_60), 0);
         lv_obj_set_style_border_width(mid, 0, 0);
         lv_obj_set_style_pad_all(mid, 0, 0);
         lv_obj_clear_flag(mid, LV_OBJ_FLAG_SCROLLABLE);
@@ -754,7 +763,7 @@ static void mempool_rebuild_cards(void)
 
         lv_obj_t *next_fee_label = lv_label_create(card);
         lv_label_set_text(next_fee_label, next_fee_txt);
-        lv_obj_set_width(next_fee_label, CARD_W - 24);
+        lv_obj_set_width(next_fee_label, card_w - 24);
         lv_obj_set_style_text_align(next_fee_label, LV_TEXT_ALIGN_LEFT, 0);
         lv_obj_set_style_text_color(next_fee_label, color_fee, 0);
         lv_obj_set_style_text_font(next_fee_label, &lv_font_montserrat_14, 0);
@@ -762,7 +771,7 @@ static void mempool_rebuild_cards(void)
 
         lv_obj_t *half_hour_label = lv_label_create(card);
         lv_label_set_text(half_hour_label, half_hour_txt);
-        lv_obj_set_width(half_hour_label, CARD_W - 24);
+        lv_obj_set_width(half_hour_label, card_w - 24);
         lv_obj_set_style_text_align(half_hour_label, LV_TEXT_ALIGN_LEFT, 0);
         lv_obj_set_style_text_color(half_hour_label, COLOR_TEXT_PRIMARY, 0);
         lv_obj_set_style_text_font(half_hour_label, &lv_font_montserrat_14, 0);
@@ -770,20 +779,20 @@ static void mempool_rebuild_cards(void)
 
         lv_obj_t *hour_label = lv_label_create(card);
         lv_label_set_text(hour_label, hour_txt);
-        lv_obj_set_width(hour_label, CARD_W - 24);
+        lv_obj_set_width(hour_label, card_w - 24);
         lv_obj_set_style_text_align(hour_label, LV_TEXT_ALIGN_LEFT, 0);
         lv_obj_set_style_text_color(hour_label, COLOR_TEXT_PRIMARY, 0);
         lv_obj_set_style_text_font(hour_label, &lv_font_montserrat_14, 0);
         lv_obj_align(hour_label, LV_ALIGN_TOP_LEFT, 12, priority_y + 40);
 
         lv_obj_t *bottom_bar = lv_obj_create(card);
-        lv_obj_set_size(bottom_bar, CARD_W, bottom_bar_h);
-        lv_obj_align(bottom_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
+        lv_obj_set_size(bottom_bar, card_w, bottom_bar_h);
+        lv_obj_align(bottom_bar, LV_ALIGN_BOTTOM_LEFT, 0, 0);
         lv_obj_set_style_radius(bottom_bar, cyberpunk ? 20 : 0, 0);
         lv_obj_set_style_bg_color(bottom_bar, color_bottom, 0);
-        lv_obj_set_style_bg_grad_color(bottom_bar, (monochrome || space || cyberpunk) ? color_bottom : lv_color_hex(0x6126D8), 0);
+        lv_obj_set_style_bg_grad_color(bottom_bar, color_bottom_grad, 0);
         lv_obj_set_style_bg_grad_dir(bottom_bar, LV_GRAD_DIR_VER, 0);
-        lv_obj_set_style_bg_opa(bottom_bar, cyberpunk ? LV_OPA_50 : (space ? LV_OPA_70 : LV_OPA_COVER), 0);
+        lv_obj_set_style_bg_opa(bottom_bar, cyberpunk ? LV_OPA_50 : (space ? LV_OPA_70 : (woods ? LV_OPA_70 : LV_OPA_COVER)), 0);
         lv_obj_set_style_border_width(bottom_bar, 0, 0);
         lv_obj_set_style_pad_all(bottom_bar, 0, 0);
         lv_obj_clear_flag(bottom_bar, LV_OBJ_FLAG_SCROLLABLE);
@@ -825,22 +834,22 @@ static void mempool_rebuild_cards(void)
         lv_snprintf(height_txt, sizeof(height_txt), "%lld", b->height);
         lv_obj_t *height_label = lv_label_create(card_wrap);
         lv_label_set_text(height_label, height_txt);
-        lv_obj_set_style_text_color(height_label, cyberpunk ? COLOR_TEXT_PRIMARY : color_height, 0);
+        lv_obj_set_style_text_color(height_label, cyberpunk ? COLOR_NAV_ICON : color_height, 0);
         lv_obj_set_style_text_font(height_label, &lv_font_montserrat_24, 0);
         lv_obj_align(height_label, LV_ALIGN_TOP_MID, 0, 0);
 
         lv_obj_t *card = lv_obj_create(card_wrap);
-        lv_obj_set_size(card, CARD_W, card_h);
-        lv_obj_align(card, LV_ALIGN_TOP_MID, 0, wrap_top_offset);
+        lv_obj_set_size(card, card_w, card_h);
+        lv_obj_set_pos(card, card_x, wrap_top_offset);
         lv_obj_set_style_radius(card, cyberpunk ? 20 : 8, 0);
         lv_obj_set_style_bg_color(card, color_card, 0);
-        lv_obj_set_style_bg_grad_color(card, color_card, 0);
+        lv_obj_set_style_bg_grad_color(card, color_card_grad, 0);
         lv_obj_set_style_bg_grad_dir(card, LV_GRAD_DIR_VER, 0);
-        lv_obj_set_style_bg_opa(card, cyberpunk ? LV_OPA_50 : (space ? LV_OPA_70 : LV_OPA_COVER), 0);
-        lv_obj_set_style_border_width(card, (monochrome || space || cyberpunk) ? 2 : 0, 0);
-        lv_obj_set_style_border_color(card, (space || cyberpunk) ? COLOR_NAV_ICON : ui_theme_get_surface_outline_color(), 0);
-        lv_obj_set_style_border_opa(card, (monochrome || space || cyberpunk) ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
-        lv_obj_set_style_shadow_width(card, cyberpunk ? 0 : 12, 0);
+        lv_obj_set_style_bg_opa(card, cyberpunk ? LV_OPA_50 : (space ? LV_OPA_70 : (woods ? LV_OPA_70 : LV_OPA_COVER)), 0);
+        lv_obj_set_style_border_width(card, (monochrome || space || cyberpunk || woods) ? 2 : 0, 0);
+        lv_obj_set_style_border_color(card, (space || cyberpunk || woods) ? COLOR_NAV_ICON : ui_theme_get_surface_outline_color(), 0);
+        lv_obj_set_style_border_opa(card, (monochrome || space || cyberpunk || woods) ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_shadow_width(card, (cyberpunk || woods) ? 0 : 12, 0);
         lv_obj_set_style_shadow_color(card, lv_color_hex(0x02060D), 0);
         lv_obj_set_style_shadow_opa(card, LV_OPA_30, 0);
         lv_obj_set_style_shadow_ofs_y(card, 4, 0);
@@ -856,13 +865,13 @@ static void mempool_rebuild_cards(void)
         }
 
         lv_obj_t *mid = lv_obj_create(card);
-        lv_obj_set_size(mid, CARD_W, content_h);
-        lv_obj_align(mid, LV_ALIGN_TOP_MID, 0, 0);
+        lv_obj_set_size(mid, card_w, content_h);
+        lv_obj_set_pos(mid, 0, 0);
         lv_obj_set_style_radius(mid, cyberpunk ? 20 : 8, 0);
         lv_obj_set_style_bg_color(mid, color_mid, 0);
-        lv_obj_set_style_bg_grad_color(mid, (monochrome || space || cyberpunk) ? color_mid : lv_color_hex(0x143FBA), 0);
+        lv_obj_set_style_bg_grad_color(mid, color_mid_grad, 0);
         lv_obj_set_style_bg_grad_dir(mid, LV_GRAD_DIR_VER, 0);
-        lv_obj_set_style_bg_opa(mid, (monochrome || space || cyberpunk) ? LV_OPA_TRANSP : LV_OPA_60, 0);
+        lv_obj_set_style_bg_opa(mid, (monochrome || space || cyberpunk || woods) ? LV_OPA_TRANSP : (bitaxe_red ? LV_OPA_COVER : LV_OPA_60), 0);
         lv_obj_set_style_border_width(mid, 0, 0);
         lv_obj_set_style_pad_all(mid, 0, 0);
         lv_obj_clear_flag(mid, LV_OBJ_FLAG_SCROLLABLE);
@@ -914,13 +923,13 @@ static void mempool_rebuild_cards(void)
         lv_obj_align(tx_label, LV_ALIGN_TOP_MID, 0, tx_y);
 
         lv_obj_t *bottom_bar = lv_obj_create(card);
-        lv_obj_set_size(bottom_bar, CARD_W, bottom_bar_h);
-        lv_obj_align(bottom_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
+        lv_obj_set_size(bottom_bar, card_w, bottom_bar_h);
+        lv_obj_align(bottom_bar, LV_ALIGN_BOTTOM_LEFT, 0, 0);
         lv_obj_set_style_radius(bottom_bar, cyberpunk ? 20 : 0, 0);
         lv_obj_set_style_bg_color(bottom_bar, color_bottom, 0);
-        lv_obj_set_style_bg_grad_color(bottom_bar, (monochrome || space || cyberpunk) ? color_bottom : lv_color_hex(0x6126D8), 0);
+        lv_obj_set_style_bg_grad_color(bottom_bar, color_bottom_grad, 0);
         lv_obj_set_style_bg_grad_dir(bottom_bar, LV_GRAD_DIR_VER, 0);
-        lv_obj_set_style_bg_opa(bottom_bar, cyberpunk ? LV_OPA_50 : (space ? LV_OPA_70 : LV_OPA_COVER), 0);
+        lv_obj_set_style_bg_opa(bottom_bar, cyberpunk ? LV_OPA_50 : (space ? LV_OPA_70 : (woods ? LV_OPA_70 : LV_OPA_COVER)), 0);
         lv_obj_set_style_border_width(bottom_bar, 0, 0);
         lv_obj_set_style_pad_all(bottom_bar, 0, 0);
         lv_obj_clear_flag(bottom_bar, LV_OBJ_FLAG_SCROLLABLE);
@@ -1211,11 +1220,14 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
-    lv_obj_t *label = lv_label_create(btn);
-    lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
-    lv_obj_center(label);
+    if (!nav_icon_render(btn, symbol, COLOR_NAV_ICON))
+    {
+        lv_obj_t *label = lv_label_create(btn);
+        lv_label_set_text(label, symbol);
+        lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
+        lv_obj_center(label);
+    }
 
     if (event_cb)
     {

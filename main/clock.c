@@ -8,6 +8,7 @@
 #include "weather.h"
 #include "mempool.h"
 #include "background.h"
+#include "nav_icons.h"
 #include "custom_fonts.h"
 #include "esp_timer.h"
 #include "lwip/apps/sntp.h"
@@ -15,6 +16,7 @@
 
 static lv_obj_t *clock_screen = NULL;
 static lv_obj_t *clock_value_card = NULL;
+static lv_obj_t *clock_date_card = NULL;
 static lv_obj_t *clock_time_shadow_label = NULL;
 static lv_obj_t *clock_time_label = NULL;
 static lv_obj_t *clock_ampm_shadow_label = NULL;
@@ -43,7 +45,10 @@ void clock_screen_create(void)
         return;
     }
 
-    const bool cyberpunk = ui_theme_get_current() == UI_THEME_CYBERPUNK;
+    const ui_theme_t theme = ui_theme_get_current();
+    const bool cyberpunk = theme == UI_THEME_CYBERPUNK;
+    const bool bitaxe_red = theme == UI_THEME_BITAXE_RED;
+    const bool woods = theme == UI_THEME_WOODS;
 
     clock_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(clock_screen, COLOR_BACKGROUND, 0);
@@ -56,12 +61,23 @@ void clock_screen_create(void)
     lv_obj_set_size(clock_value_card, 560, 180);
     lv_obj_align(clock_value_card, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_bg_color(clock_value_card, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(clock_value_card, LV_OPA_20, 0);
+    lv_obj_set_style_bg_opa(clock_value_card, (bitaxe_red || woods) ? LV_OPA_TRANSP : LV_OPA_20, 0);
     lv_obj_set_style_border_width(clock_value_card, 0, 0);
     lv_obj_set_style_radius(clock_value_card, 34, 0);
     lv_obj_set_style_shadow_width(clock_value_card, 0, 0);
     lv_obj_set_style_pad_all(clock_value_card, 0, 0);
     lv_obj_clear_flag(clock_value_card, LV_OBJ_FLAG_SCROLLABLE);
+
+    clock_date_card = lv_obj_create(clock_screen);
+    lv_obj_set_size(clock_date_card, 540, 52);
+    lv_obj_align(clock_date_card, LV_ALIGN_CENTER, 0, 134);
+    lv_obj_set_style_bg_color(clock_date_card, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(clock_date_card, (bitaxe_red || woods) ? LV_OPA_TRANSP : LV_OPA_20, 0);
+    lv_obj_set_style_border_width(clock_date_card, 0, 0);
+    lv_obj_set_style_radius(clock_date_card, 24, 0);
+    lv_obj_set_style_shadow_width(clock_date_card, 0, 0);
+    lv_obj_set_style_pad_all(clock_date_card, 0, 0);
+    lv_obj_clear_flag(clock_date_card, LV_OBJ_FLAG_SCROLLABLE);
 
     if (cyberpunk)
     {
@@ -97,8 +113,9 @@ void clock_screen_create(void)
     lv_label_set_text(clock_date_label, current_date_text);
     lv_obj_set_width(clock_date_label, 760);
     lv_obj_set_style_text_align(clock_date_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(clock_date_label, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_set_style_text_font(clock_date_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(clock_date_label, lv_color_white(), 0);
+    lv_obj_set_style_text_opa(clock_date_label, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_font(clock_date_label, &lv_font_montserrat_28, 0);
     lv_obj_align(clock_date_label, LV_ALIGN_CENTER, 0, 134);
 
     clock_refresh_layout();
@@ -130,11 +147,11 @@ void clock_screen_create(void)
     create_bottom_nav_btn_img(bottom_nav, &cube_solid_full, clock_block_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &cubes_solid_full, clock_mempool_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &clock_solid_full, NULL, true);
-    create_bottom_nav_btn(bottom_nav, "$", clock_price_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "W", clock_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_BITCOIN, clock_price_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_WEATHER, clock_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_CHART, clock_night_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, clock_wifi_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, clock_settings_clicked, false);
-    create_bottom_nav_btn(bottom_nav, LV_SYMBOL_EYE_OPEN, clock_night_clicked, false);
 
     clock_start_sntp();
     clock_update_time_text();
@@ -153,6 +170,7 @@ void clock_screen_destroy(void)
         lv_obj_del(clock_screen);
         clock_screen = NULL;
         clock_value_card = NULL;
+        clock_date_card = NULL;
         clock_time_shadow_label = NULL;
         clock_time_label = NULL;
         clock_ampm_shadow_label = NULL;
@@ -289,6 +307,18 @@ static void clock_toggle_content_clicked(lv_event_t *e)
         }
     }
 
+    if (clock_date_card)
+    {
+        if (clock_content_hidden)
+        {
+            lv_obj_add_flag(clock_date_card, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_clear_flag(clock_date_card, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     if (clock_time_shadow_label)
     {
         if (clock_content_hidden)
@@ -362,11 +392,14 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
-    lv_obj_t *label = lv_label_create(btn);
-    lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
-    lv_obj_center(label);
+    if (!nav_icon_render(btn, symbol, COLOR_NAV_ICON))
+    {
+        lv_obj_t *label = lv_label_create(btn);
+        lv_label_set_text(label, symbol);
+        lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
+        lv_obj_center(label);
+    }
 
     if (event_cb)
     {

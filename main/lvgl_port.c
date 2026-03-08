@@ -21,6 +21,7 @@
 static const char *TAG = "lv_port";                      // Tag for logging
 static SemaphoreHandle_t lvgl_mux;                       // LVGL mutex for synchronization
 static TaskHandle_t lvgl_task_handle = NULL;             // Handle for the LVGL task
+static bool lvgl_task_watchdog_registered = false;       // Wallpaper redraws can legitimately exceed the task WDT budget
 static bool hot_corner_latched = false;                  // Prevent a single press from toggling screen power twice
 static bool wake_waiting_for_release = false;            // Prevent the same press from turning the screen back on
 
@@ -520,21 +521,11 @@ static esp_err_t tick_init(void)
 
 static void lvgl_port_task(void *arg)
 {
+    LV_UNUSED(arg);
     ESP_LOGD(TAG, "Starting LVGL task"); // Log the task start
-
-    // Register this task with the watchdog
-    esp_err_t wdt_ret = esp_task_wdt_add(NULL);
-    if (wdt_ret != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to add LVGL task to watchdog: %s", esp_err_to_name(wdt_ret));
-    }
 
     uint32_t task_delay_ms = LVGL_PORT_TASK_MAX_DELAY_MS; // Set initial task delay
     while (1) {
-        // Reset watchdog timer to prevent timeout (only if registered successfully)
-        if (wdt_ret == ESP_OK) {
-            esp_task_wdt_reset();
-        }
-        
         if (lvgl_port_lock(100)) { // Try to lock the LVGL mutex with timeout
             task_delay_ms = lv_timer_handler(); // Handle LVGL timer events
             wifi_task_handler(); // Handle WiFi scan completion
@@ -637,10 +628,14 @@ void lvgl_port_task_suspend(void)
 {
     if (lvgl_task_handle != NULL) {
         ESP_LOGW(TAG, "Suspending LVGL task to prevent PSRAM access during flash writes");
-        // Remove from watchdog before suspending
-        esp_err_t ret = esp_task_wdt_delete(lvgl_task_handle);
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to remove lvgl task from watchdog: %s", esp_err_to_name(ret));
+        if (lvgl_task_watchdog_registered) {
+            esp_err_t ret = esp_task_wdt_delete(lvgl_task_handle);
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to remove lvgl task from watchdog: %s", esp_err_to_name(ret));
+            }
+            else {
+                lvgl_task_watchdog_registered = false;
+            }
         }
         vTaskSuspend(lvgl_task_handle);
     }
@@ -651,10 +646,5 @@ void lvgl_port_task_resume(void)
     if (lvgl_task_handle != NULL) {
         ESP_LOGW(TAG, "Resuming LVGL task");
         vTaskResume(lvgl_task_handle);
-        // Re-add to watchdog after resuming
-        esp_err_t ret = esp_task_wdt_add(lvgl_task_handle);
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to re-add lvgl task to watchdog: %s", esp_err_to_name(ret));
-        }
     }
 }

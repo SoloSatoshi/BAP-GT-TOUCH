@@ -8,6 +8,7 @@
 #include "weather.h"
 #include "mempool.h"
 #include "background.h"
+#include "nav_icons.h"
 #include "theme.h"
 #include "keyboard_theme.h"
 #include "stdio.h"
@@ -200,11 +201,14 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
-    lv_obj_t *label = lv_label_create(btn);
-    lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
-    lv_obj_center(label);
+    if (!nav_icon_render(btn, symbol, COLOR_NAV_ICON))
+    {
+        lv_obj_t *label = lv_label_create(btn);
+        lv_label_set_text(label, symbol);
+        lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
+        lv_obj_center(label);
+    }
 
     if (event_cb)
     {
@@ -575,6 +579,14 @@ static void apply_settings_dropdown_style(lv_obj_t *dropdown)
     lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_SELECTED);
     lv_obj_set_style_text_color(list, COLOR_TEXT_ON_ACCENT, LV_PART_SELECTED);
     lv_obj_set_style_border_width(list, 0, LV_PART_SELECTED);
+    lv_obj_set_style_bg_color(list, COLOR_ACCENT, LV_PART_SELECTED | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_SELECTED | LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(list, COLOR_TEXT_ON_ACCENT, LV_PART_SELECTED | LV_STATE_CHECKED);
+    lv_obj_set_style_border_width(list, 0, LV_PART_SELECTED | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_color(list, COLOR_ACCENT, LV_PART_SELECTED | LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_SELECTED | LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(list, COLOR_TEXT_ON_ACCENT, LV_PART_SELECTED | LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(list, 0, LV_PART_SELECTED | LV_STATE_PRESSED);
     lv_obj_set_style_bg_color(list, COLOR_ACCENT, LV_PART_SCROLLBAR);
     lv_obj_set_style_bg_opa(list, LV_OPA_50, LV_PART_SCROLLBAR);
 }
@@ -635,8 +647,10 @@ static void settings_reload_screen_async(void *data)
     lv_scr_load(transition_screen);
 
     settings_screen_destroy();
+
     settings_screen_create();
     lv_scr_load(settings_get_screen());
+
     lv_obj_del(transition_screen);
 }
 
@@ -839,11 +853,23 @@ void settings_screen_create(void)
     lv_obj_clear_flag(settings_screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(settings_screen, LV_SCROLLBAR_MODE_OFF);
 
+    const ui_theme_t theme = ui_theme_get_current();
+    const bool cardless_theme = theme == UI_THEME_BITAXE_RED || theme == UI_THEME_WOODS;
+
     lv_obj_t *main_cont = lv_obj_create(settings_screen);
     lv_obj_set_size(main_cont, SCREEN_WIDTH - 60, SCREEN_HEIGHT - 100);
     lv_obj_align(main_cont, LV_ALIGN_TOP_MID, 0, 16);
-    translucent_card_apply(main_cont, 14, LV_OPA_20);
-    lv_obj_set_style_bg_opa(main_cont, LV_OPA_COVER, 0);
+    if (cardless_theme)
+    {
+        lv_obj_set_style_bg_color(main_cont, lv_color_black(), 0);
+        lv_obj_set_style_bg_opa(main_cont, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_shadow_width(main_cont, 0, 0);
+    }
+    else
+    {
+        translucent_card_apply(main_cont, 14, LV_OPA_20);
+        lv_obj_set_style_bg_opa(main_cont, LV_OPA_COVER, 0);
+    }
     lv_obj_set_style_border_width(main_cont, 0, 0);
     lv_obj_set_style_border_opa(main_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(main_cont, 16, 0);
@@ -1190,11 +1216,11 @@ void settings_screen_create(void)
     create_bottom_nav_btn_img(bottom_nav, &cube_solid_full, settings_block_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &cubes_solid_full, settings_mempool_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &clock_solid_full, settings_clock_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "$", settings_price_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "W", settings_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_BITCOIN, settings_price_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_WEATHER, settings_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_CHART, settings_night_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, settings_wifi_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, settings_diagnostics_handler, true);
-    create_bottom_nav_btn(bottom_nav, LV_SYMBOL_EYE_OPEN, settings_night_clicked, false);
 
     settings_keyboard = lv_keyboard_create(settings_screen);
     keyboard_theme_apply(settings_keyboard);

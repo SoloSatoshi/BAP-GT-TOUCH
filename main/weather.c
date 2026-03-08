@@ -8,6 +8,7 @@
 #include "settings.h"
 #include "night.h"
 #include "background.h"
+#include "nav_icons.h"
 #include "custom_fonts.h"
 #include "lvgl_port.h"
 #include "ota_update.h"
@@ -169,6 +170,7 @@ static esp_err_t weather_http_event_handler(esp_http_client_event_t *evt)
 void weather_screen_create(void)
 {
     bool location_changed = false;
+    const bool woods = ui_theme_get_current() == UI_THEME_WOODS;
 
     if (weather_screen != NULL)
     {
@@ -219,7 +221,14 @@ void weather_screen_create(void)
     weather_main_icon_cont = lv_obj_create(weather_summary_card);
     lv_obj_set_size(weather_main_icon_cont, 142, 128);
     lv_obj_align(weather_main_icon_cont, LV_ALIGN_LEFT_MID, 20, 0);
-    translucent_card_apply(weather_main_icon_cont, 30, LV_OPA_20);
+    translucent_card_apply(weather_main_icon_cont, 30, woods ? LV_OPA_40 : LV_OPA_20);
+    if (woods)
+    {
+        lv_obj_set_style_bg_color(weather_main_icon_cont, lv_color_black(), 0);
+        lv_obj_set_style_bg_opa(weather_main_icon_cont, LV_OPA_40, 0);
+        lv_obj_set_style_border_width(weather_main_icon_cont, 0, 0);
+        lv_obj_set_style_shadow_width(weather_main_icon_cont, 0, 0);
+    }
     lv_obj_set_style_pad_all(weather_main_icon_cont, 0, 0);
     lv_obj_clear_flag(weather_main_icon_cont, LV_OBJ_FLAG_SCROLLABLE);
     weather_add_glass_highlight(weather_main_icon_cont, true);
@@ -288,7 +297,14 @@ void weather_screen_create(void)
         forecast_icon_cont[i] = lv_obj_create(forecast_card_cont[i]);
         lv_obj_set_size(forecast_icon_cont[i], 70, 70);
         lv_obj_align(forecast_icon_cont[i], LV_ALIGN_TOP_LEFT, 14, 40);
-        translucent_card_apply(forecast_icon_cont[i], 22, LV_OPA_20);
+        translucent_card_apply(forecast_icon_cont[i], 22, woods ? LV_OPA_30 : LV_OPA_20);
+        if (woods)
+        {
+            lv_obj_set_style_bg_color(forecast_icon_cont[i], lv_color_black(), 0);
+            lv_obj_set_style_bg_opa(forecast_icon_cont[i], LV_OPA_30, 0);
+            lv_obj_set_style_border_width(forecast_icon_cont[i], 0, 0);
+            lv_obj_set_style_shadow_width(forecast_icon_cont[i], 0, 0);
+        }
         lv_obj_set_style_pad_all(forecast_icon_cont[i], 0, 0);
         lv_obj_clear_flag(forecast_icon_cont[i], LV_OBJ_FLAG_SCROLLABLE);
         weather_add_glass_highlight(forecast_icon_cont[i], false);
@@ -332,11 +348,11 @@ void weather_screen_create(void)
     create_bottom_nav_btn_img(bottom_nav, &cube_solid_full, weather_block_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &cubes_solid_full, weather_mempool_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &clock_solid_full, weather_clock_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "$", weather_price_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "W", NULL, true);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_BITCOIN, weather_price_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_WEATHER, NULL, true);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_CHART, weather_night_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, weather_wifi_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, weather_settings_clicked, false);
-    create_bottom_nav_btn(bottom_nav, LV_SYMBOL_EYE_OPEN, weather_night_clicked, false);
 
     weather_apply_cached();
     weather_service_start();
@@ -1323,7 +1339,21 @@ static void weather_style_surface(lv_obj_t *obj, bool featured)
         return;
     }
 
-    translucent_card_apply(obj, featured ? 26 : 22, LV_OPA_20);
+    if (ui_theme_get_current() == UI_THEME_WOODS)
+    {
+        translucent_card_apply(obj, featured ? 26 : 22, featured ? (lv_opa_t)115 : LV_OPA_40);
+        lv_obj_set_style_bg_color(obj, lv_color_black(), 0);
+        lv_obj_set_style_bg_grad_color(obj, lv_color_black(), 0);
+        lv_obj_set_style_bg_opa(obj, featured ? (lv_opa_t)115 : LV_OPA_40, 0);
+        lv_obj_set_style_border_width(obj, 0, 0);
+        lv_obj_set_style_border_opa(obj, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_shadow_width(obj, 0, 0);
+        lv_obj_set_style_shadow_opa(obj, LV_OPA_TRANSP, 0);
+    }
+    else
+    {
+        translucent_card_apply(obj, featured ? 26 : 22, LV_OPA_20);
+    }
     lv_obj_set_style_border_width(obj, 0, 0);
     lv_obj_set_style_border_opa(obj, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(obj, 0, 0);
@@ -1476,11 +1506,14 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
-    lv_obj_t *label = lv_label_create(btn);
-    lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
-    lv_obj_center(label);
+    if (!nav_icon_render(btn, symbol, COLOR_NAV_ICON))
+    {
+        lv_obj_t *label = lv_label_create(btn);
+        lv_label_set_text(label, symbol);
+        lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
+        lv_obj_center(label);
+    }
 
     if (event_cb)
     {

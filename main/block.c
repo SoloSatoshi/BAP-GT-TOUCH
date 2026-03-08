@@ -8,6 +8,7 @@
 #include "weather.h"
 #include "mempool.h"
 #include "background.h"
+#include "nav_icons.h"
 #include "custom_fonts.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,7 +32,10 @@ void block_screen_create(void)
         return;
     }
 
-    const bool cyberpunk = ui_theme_get_current() == UI_THEME_CYBERPUNK;
+    const ui_theme_t theme = ui_theme_get_current();
+    const bool cyberpunk = theme == UI_THEME_CYBERPUNK;
+    const bool bitaxe_red = theme == UI_THEME_BITAXE_RED;
+    const bool woods = theme == UI_THEME_WOODS;
 
     block_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(block_screen, COLOR_BACKGROUND, 0);
@@ -42,7 +46,7 @@ void block_screen_create(void)
 
     block_title_label = lv_label_create(block_screen);
     lv_label_set_text(block_title_label, "CURRENT BLOCK HEIGHT");
-    lv_obj_set_style_text_color(block_title_label, cyberpunk ? COLOR_NAV_ICON : COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_color(block_title_label, (cyberpunk || woods) ? COLOR_NAV_ICON : COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_font(block_title_label, &lv_font_montserrat_20, 0);
     lv_obj_align(block_title_label, LV_ALIGN_TOP_MID, 0, 30);
 
@@ -50,7 +54,7 @@ void block_screen_create(void)
     lv_obj_set_size(block_value_card, SCREEN_WIDTH - 180, 180);
     lv_obj_align(block_value_card, LV_ALIGN_CENTER, 0, -10);
     lv_obj_set_style_bg_color(block_value_card, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(block_value_card, LV_OPA_20, 0);
+    lv_obj_set_style_bg_opa(block_value_card, (bitaxe_red || woods) ? LV_OPA_TRANSP : LV_OPA_20, 0);
     lv_obj_set_style_border_width(block_value_card, 0, 0);
     lv_obj_set_style_radius(block_value_card, 34, 0);
     lv_obj_set_style_shadow_width(block_value_card, 0, 0);
@@ -93,11 +97,11 @@ void block_screen_create(void)
     create_bottom_nav_btn_img(bottom_nav, &cube_solid_full, NULL, true);
     create_bottom_nav_btn_img(bottom_nav, &cubes_solid_full, block_mempool_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &clock_solid_full, block_clock_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "$", block_price_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "W", block_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_BITCOIN, block_price_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_WEATHER, block_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_CHART, block_night_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, block_wifi_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, block_settings_clicked, false);
-    create_bottom_nav_btn(bottom_nav, LV_SYMBOL_EYE_OPEN, block_night_clicked, false);
 
     apply_cached_block_height();
 }
@@ -170,11 +174,14 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
-    lv_obj_t *label = lv_label_create(btn);
-    lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
-    lv_obj_center(label);
+    if (!nav_icon_render(btn, symbol, COLOR_NAV_ICON))
+    {
+        lv_obj_t *label = lv_label_create(btn);
+        lv_label_set_text(label, symbol);
+        lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
+        lv_obj_center(label);
+    }
 
     if (event_cb)
     {

@@ -8,6 +8,7 @@
 #include "weather.h"
 #include "mempool.h"
 #include "background.h"
+#include "nav_icons.h"
 #include "bap.h"
 #include "custom_fonts.h"
 #include "stdio.h"
@@ -312,11 +313,11 @@ static void create_bottom_nav(void)
     create_bottom_nav_btn_img(bottom_nav, &cube_solid_full, night_block_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &cubes_solid_full, night_mempool_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &clock_solid_full, night_clock_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "$", night_price_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "W", night_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_BITCOIN, night_price_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_WEATHER, night_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_CHART, NULL, true);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, night_wifi_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, night_settings_clicked, false);
-    create_bottom_nav_btn(bottom_nav, LV_SYMBOL_EYE_OPEN, NULL, true);
 }
 
 static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_event_cb_t event_cb, bool active)
@@ -331,11 +332,14 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
-    lv_obj_t *label = lv_label_create(btn);
-    lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
-    lv_obj_center(label);
+    if (!nav_icon_render(btn, symbol, COLOR_NAV_ICON))
+    {
+        lv_obj_t *label = lv_label_create(btn);
+        lv_label_set_text(label, symbol);
+        lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
+        lv_obj_center(label);
+    }
 
     if (event_cb)
     {

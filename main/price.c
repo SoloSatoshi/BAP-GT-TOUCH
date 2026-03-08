@@ -9,6 +9,7 @@
 #include "weather.h"
 #include "custom_fonts.h"
 #include "background.h"
+#include "nav_icons.h"
 #include "lvgl_port.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
@@ -91,7 +92,10 @@ void price_screen_create(void)
         return;
     }
 
-    const bool cyberpunk = ui_theme_get_current() == UI_THEME_CYBERPUNK;
+    const ui_theme_t theme = ui_theme_get_current();
+    const bool cyberpunk = theme == UI_THEME_CYBERPUNK;
+    const bool bitaxe_red = theme == UI_THEME_BITAXE_RED;
+    const bool woods = theme == UI_THEME_WOODS;
 
     price_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(price_screen, COLOR_BACKGROUND, 0);
@@ -102,7 +106,7 @@ void price_screen_create(void)
 
     price_title_label = lv_label_create(price_screen);
     lv_label_set_text(price_title_label, "BTC PRICE");
-    lv_obj_set_style_text_color(price_title_label, COLOR_TEXT_SECONDARY, 0);
+    lv_obj_set_style_text_color(price_title_label, woods ? COLOR_NAV_ICON : COLOR_TEXT_SECONDARY, 0);
     lv_obj_set_style_text_font(price_title_label, &lv_font_montserrat_20, 0);
     lv_obj_align(price_title_label, LV_ALIGN_TOP_MID, 0, 30);
 
@@ -117,7 +121,7 @@ void price_screen_create(void)
     lv_obj_set_size(price_value_card, 620, 180);
     lv_obj_align(price_value_card, LV_ALIGN_CENTER, 0, -10);
     lv_obj_set_style_bg_color(price_value_card, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(price_value_card, LV_OPA_20, 0);
+    lv_obj_set_style_bg_opa(price_value_card, (bitaxe_red || woods) ? LV_OPA_TRANSP : LV_OPA_20, 0);
     lv_obj_set_style_border_width(price_value_card, 0, 0);
     lv_obj_set_style_radius(price_value_card, 34, 0);
     lv_obj_set_style_shadow_width(price_value_card, 0, 0);
@@ -174,8 +178,8 @@ void price_screen_create(void)
 
     price_currency_label = lv_label_create(price_screen);
     lv_label_set_text(price_currency_label, settings_get_price_currency_code());
-    lv_obj_set_style_text_color(price_currency_label, COLOR_TEXT_SECONDARY, 0);
-    lv_obj_set_style_text_opa(price_currency_label, (lv_opa_t)192, 0);
+    lv_obj_set_style_text_color(price_currency_label, lv_color_white(), 0);
+    lv_obj_set_style_text_opa(price_currency_label, LV_OPA_COVER, 0);
     lv_obj_set_style_text_font(price_currency_label, &lv_font_montserrat_28, 0);
     lv_obj_align(price_currency_label, LV_ALIGN_CENTER, 0, 104);
 
@@ -196,11 +200,11 @@ void price_screen_create(void)
     create_bottom_nav_btn_img(bottom_nav, &cube_solid_full, price_block_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &cubes_solid_full, price_mempool_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &clock_solid_full, price_clock_clicked, false);
-    create_bottom_nav_btn(bottom_nav, "$", NULL, true);
-    create_bottom_nav_btn(bottom_nav, "W", price_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_BITCOIN, NULL, true);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_WEATHER, price_weather_clicked, false);
+    create_bottom_nav_btn(bottom_nav, NAV_ICON_CHART, price_night_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, price_wifi_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, price_settings_clicked, false);
-    create_bottom_nav_btn(bottom_nav, LV_SYMBOL_EYE_OPEN, price_night_clicked, false);
 
     price_sync_selected_currency();
     apply_cached_price();
@@ -670,11 +674,14 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
-    lv_obj_t *label = lv_label_create(btn);
-    lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
-    lv_obj_center(label);
+    if (!nav_icon_render(btn, symbol, COLOR_NAV_ICON))
+    {
+        lv_obj_t *label = lv_label_create(btn);
+        lv_label_set_text(label, symbol);
+        lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
+        lv_obj_center(label);
+    }
 
     if (event_cb)
     {
