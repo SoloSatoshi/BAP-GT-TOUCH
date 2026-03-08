@@ -95,6 +95,9 @@ uint8_t lcd_backlight_get_brightness(void);
 esp_err_t lcd_backlight_fade_to(uint8_t target_brightness, uint32_t fade_time_ms);
 esp_err_t lcd_backlight_enable(void);
 esp_err_t lcd_backlight_disable(void);
+esp_err_t lcd_screen_turn_off(void);
+esp_err_t lcd_screen_wake(void);
+bool lcd_screen_is_off(void);
 
 void example_lvgl_demo_ui();
 

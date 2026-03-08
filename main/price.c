@@ -6,7 +6,9 @@
 #include "wifi.h"
 #include "settings.h"
 #include "night.h"
+#include "weather.h"
 #include "custom_fonts.h"
+#include "background.h"
 #include "lvgl_port.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
@@ -15,25 +17,30 @@
 #include "esp_crt_bundle.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <ctype.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include "ota_update.h"
 
 #define PRICE_HTTP_BUF_SIZE 512
 #define PRICE_FETCH_INTERVAL_MS 60000
 
-static const char *PRICE_API_URL = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd";
-static const char *PRICE_API_FALLBACK_URL = "https://api.coinbase.com/v2/prices/BTC-USD/spot";
-
 static lv_obj_t *price_screen = NULL;
+static lv_obj_t *price_value_card = NULL;
+static lv_obj_t *price_shadow_cont = NULL;
 static lv_obj_t *price_value_cont = NULL;
+static lv_obj_t *price_prefix_shadow_label = NULL;
 static lv_obj_t *price_prefix_label = NULL;
+static lv_obj_t *price_value_shadow_label = NULL;
 static lv_obj_t *price_value_label = NULL;
-static lv_obj_t *price_suffix_label = NULL;
+static lv_obj_t *price_currency_label = NULL;
 static lv_obj_t *price_title_label = NULL;
 static lv_obj_t *price_status_label = NULL;
 static TaskHandle_t price_task_handle = NULL;
 static bool price_netif_ready = false;
+static price_currency_t displayed_price_currency = PRICE_CURRENCY_USD;
+static bool price_currency_initialized = false;
 
 static char current_price_text[32] = "--";
 static char current_price_status[24] = "LOADING...";
@@ -44,12 +51,16 @@ static void apply_cached_price(void);
 static void price_task(void *arg);
 static bool price_fetch_once(void);
 static bool price_fetch_from_url(const char *url);
-static bool price_parse_coingecko(const char *json, double *out_price);
+static bool price_parse_coingecko(const char *json, const char *currency_code, double *out_price);
 static bool price_parse_coinbase(const char *json, double *out_price);
 static bool price_ensure_netif(void);
 static bool price_wifi_connected(void);
 static void format_price_with_commas(long long value, char *out, size_t out_size);
 static void price_set_status(const char *status);
+static void price_apply_currency_labels(void);
+static void price_apply_value_layout(void);
+static void price_sync_selected_currency(void);
+static void price_build_api_urls(char *primary_url, size_t primary_size, char *fallback_url, size_t fallback_size, char *currency_code, size_t currency_code_size);
 
 static char price_http_buf[PRICE_HTTP_BUF_SIZE];
 static int price_http_len = 0;
@@ -80,14 +91,17 @@ void price_screen_create(void)
         return;
     }
 
+    const bool cyberpunk = ui_theme_get_current() == UI_THEME_CYBERPUNK;
+
     price_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(price_screen, COLOR_BACKGROUND, 0);
     lv_obj_set_style_bg_opa(price_screen, LV_OPA_COVER, 0);
+    screen_background_apply(price_screen);
     lv_obj_clear_flag(price_screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(price_screen, LV_SCROLLBAR_MODE_OFF);
 
     price_title_label = lv_label_create(price_screen);
-    lv_label_set_text(price_title_label, "BTC PRICE (USD)");
+    lv_label_set_text(price_title_label, "BTC PRICE");
     lv_obj_set_style_text_color(price_title_label, COLOR_TEXT_SECONDARY, 0);
     lv_obj_set_style_text_font(price_title_label, &lv_font_montserrat_20, 0);
     lv_obj_align(price_title_label, LV_ALIGN_TOP_MID, 0, 30);
@@ -98,6 +112,43 @@ void price_screen_create(void)
     lv_obj_set_style_text_opa(price_status_label, (lv_opa_t)192, 0);
     lv_obj_set_style_text_font(price_status_label, &lv_font_montserrat_16, 0);
     lv_obj_align(price_status_label, LV_ALIGN_TOP_MID, 0, 58);
+
+    price_value_card = lv_obj_create(price_screen);
+    lv_obj_set_size(price_value_card, 620, 180);
+    lv_obj_align(price_value_card, LV_ALIGN_CENTER, 0, -10);
+    lv_obj_set_style_bg_color(price_value_card, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(price_value_card, LV_OPA_20, 0);
+    lv_obj_set_style_border_width(price_value_card, 0, 0);
+    lv_obj_set_style_radius(price_value_card, 34, 0);
+    lv_obj_set_style_shadow_width(price_value_card, 0, 0);
+    lv_obj_set_style_pad_all(price_value_card, 0, 0);
+    lv_obj_clear_flag(price_value_card, LV_OBJ_FLAG_SCROLLABLE);
+
+    if (cyberpunk)
+    {
+        price_shadow_cont = lv_obj_create(price_screen);
+        lv_obj_set_size(price_shadow_cont, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_set_style_bg_opa(price_shadow_cont, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(price_shadow_cont, 0, 0);
+        lv_obj_set_style_pad_all(price_shadow_cont, 0, 0);
+        lv_obj_set_style_pad_column(price_shadow_cont, 10, 0);
+        lv_obj_set_flex_flow(price_shadow_cont, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(price_shadow_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_align(price_shadow_cont, LV_ALIGN_CENTER, 4, -6);
+
+        price_prefix_shadow_label = lv_label_create(price_shadow_cont);
+        lv_label_set_text(price_prefix_shadow_label, settings_get_price_currency_prefix());
+        lv_obj_set_style_text_color(price_prefix_shadow_label, lv_color_hex(0x4A1800), 0);
+        lv_obj_set_style_text_opa(price_prefix_shadow_label, (lv_opa_t)192, 0);
+        lv_obj_set_style_text_font(price_prefix_shadow_label, &montserrat_140, 0);
+
+        price_value_shadow_label = lv_label_create(price_shadow_cont);
+        lv_label_set_text(price_value_shadow_label, current_price_text);
+        lv_obj_set_style_text_color(price_value_shadow_label, lv_color_hex(0x4A1800), 0);
+        lv_obj_set_style_text_opa(price_value_shadow_label, LV_OPA_80, 0);
+        lv_obj_set_style_text_font(price_value_shadow_label, &montserrat_140, 0);
+        lv_obj_set_style_text_letter_space(price_value_shadow_label, 2, 0);
+    }
 
     price_value_cont = lv_obj_create(price_screen);
     lv_obj_set_size(price_value_cont, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
@@ -111,21 +162,22 @@ void price_screen_create(void)
 
     price_prefix_label = lv_label_create(price_value_cont);
     lv_label_set_text(price_prefix_label, "$");
-    lv_obj_set_style_text_color(price_prefix_label, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_set_style_text_opa(price_prefix_label, (lv_opa_t)192, 0);
+    lv_obj_set_style_text_color(price_prefix_label, cyberpunk ? COLOR_NAV_ICON : COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_opa(price_prefix_label, cyberpunk ? LV_OPA_COVER : (lv_opa_t)192, 0);
     lv_obj_set_style_text_font(price_prefix_label, &montserrat_140, 0);
 
     price_value_label = lv_label_create(price_value_cont);
     lv_label_set_text(price_value_label, current_price_text);
-    lv_obj_set_style_text_color(price_value_label, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_color(price_value_label, cyberpunk ? COLOR_NAV_ICON : COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_font(price_value_label, &montserrat_140, 0);
     lv_obj_set_style_text_letter_space(price_value_label, 2, 0);
 
-    price_suffix_label = lv_label_create(price_value_cont);
-    lv_label_set_text(price_suffix_label, "");
-    lv_obj_set_style_text_color(price_suffix_label, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_set_style_text_opa(price_suffix_label, (lv_opa_t)192, 0);
-    lv_obj_set_style_text_font(price_suffix_label, &lv_font_montserrat_48, 0);
+    price_currency_label = lv_label_create(price_screen);
+    lv_label_set_text(price_currency_label, settings_get_price_currency_code());
+    lv_obj_set_style_text_color(price_currency_label, COLOR_TEXT_SECONDARY, 0);
+    lv_obj_set_style_text_opa(price_currency_label, (lv_opa_t)192, 0);
+    lv_obj_set_style_text_font(price_currency_label, &lv_font_montserrat_28, 0);
+    lv_obj_align(price_currency_label, LV_ALIGN_CENTER, 0, 104);
 
     lv_obj_t *bottom_nav = lv_obj_create(price_screen);
     lv_obj_set_size(bottom_nav, SCREEN_WIDTH, 64);
@@ -145,10 +197,12 @@ void price_screen_create(void)
     create_bottom_nav_btn_img(bottom_nav, &cubes_solid_full, price_mempool_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &clock_solid_full, price_clock_clicked, false);
     create_bottom_nav_btn(bottom_nav, "$", NULL, true);
+    create_bottom_nav_btn(bottom_nav, "W", price_weather_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, price_wifi_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, price_settings_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_EYE_OPEN, price_night_clicked, false);
 
+    price_sync_selected_currency();
     apply_cached_price();
 
     if (price_task_handle == NULL)
@@ -163,10 +217,14 @@ void price_screen_destroy(void)
     {
         lv_obj_del(price_screen);
         price_screen = NULL;
+        price_value_card = NULL;
+        price_shadow_cont = NULL;
         price_value_cont = NULL;
+        price_prefix_shadow_label = NULL;
         price_prefix_label = NULL;
+        price_value_shadow_label = NULL;
         price_value_label = NULL;
-        price_suffix_label = NULL;
+        price_currency_label = NULL;
         price_title_label = NULL;
         price_status_label = NULL;
     }
@@ -179,6 +237,13 @@ lv_obj_t *price_get_screen(void)
 
 static void apply_cached_price(void)
 {
+    price_apply_currency_labels();
+    price_apply_value_layout();
+
+    if (price_value_shadow_label)
+    {
+        lv_label_set_text(price_value_shadow_label, current_price_text);
+    }
     if (price_value_label)
     {
         lv_label_set_text(price_value_label, current_price_text);
@@ -191,17 +256,30 @@ static void apply_cached_price(void)
 
 static bool price_fetch_once(void)
 {
+    char primary_url[160];
+    char fallback_url[128];
+    char currency_code[8];
+
+    price_sync_selected_currency();
+
     if (!price_ensure_netif() || !price_wifi_connected())
     {
         return false;
     }
 
-    if (price_fetch_from_url(PRICE_API_URL))
+    price_build_api_urls(primary_url, sizeof(primary_url), fallback_url, sizeof(fallback_url), currency_code, sizeof(currency_code));
+
+    if (price_fetch_from_url(primary_url))
     {
         return true;
     }
 
-    return price_fetch_from_url(PRICE_API_FALLBACK_URL);
+    if (fallback_url[0] == '\0')
+    {
+        return false;
+    }
+
+    return price_fetch_from_url(fallback_url);
 }
 
 static bool price_ensure_netif(void)
@@ -268,7 +346,9 @@ static bool price_fetch_from_url(const char *url)
     bool parsed = false;
     if (strstr(url, "coingecko"))
     {
-        parsed = price_parse_coingecko(price_http_buf, &price);
+        char currency_code[8];
+        price_build_api_urls(NULL, 0, NULL, 0, currency_code, sizeof(currency_code));
+        parsed = price_parse_coingecko(price_http_buf, currency_code, &price);
     }
     else
     {
@@ -285,21 +365,32 @@ static bool price_fetch_from_url(const char *url)
     return true;
 }
 
-static bool price_parse_coingecko(const char *json, double *out_price)
+static bool price_parse_coingecko(const char *json, const char *currency_code, double *out_price)
 {
-    if (!json || !out_price)
+    if (!json || !currency_code || !out_price)
     {
         return false;
     }
 
-    const char *usd_ptr = strstr(json, "\"usd\":");
-    if (!usd_ptr)
+    char lower_code[8];
+    size_t i = 0;
+    for (; currency_code[i] != '\0' && i < sizeof(lower_code) - 1; i++)
+    {
+        lower_code[i] = (char)tolower((unsigned char)currency_code[i]);
+    }
+    lower_code[i] = '\0';
+
+    char needle[16];
+    snprintf(needle, sizeof(needle), "\"%s\":", lower_code);
+
+    const char *price_ptr = strstr(json, needle);
+    if (!price_ptr)
     {
         return false;
     }
 
-    usd_ptr += 6;
-    double price = strtod(usd_ptr, NULL);
+    price_ptr += strlen(needle);
+    double price = strtod(price_ptr, NULL);
     if (price <= 0.0)
     {
         return false;
@@ -380,6 +471,126 @@ static void price_set_status(const char *status)
     }
 }
 
+static void price_apply_currency_labels(void)
+{
+    if (price_title_label)
+    {
+        lv_label_set_text(price_title_label, "BTC PRICE");
+    }
+    if (price_prefix_label)
+    {
+        lv_label_set_text(price_prefix_label, settings_get_price_currency_prefix());
+    }
+    if (price_prefix_shadow_label)
+    {
+        lv_label_set_text(price_prefix_shadow_label, settings_get_price_currency_prefix());
+    }
+    if (price_currency_label)
+    {
+        lv_label_set_text(price_currency_label, settings_get_price_currency_code());
+    }
+}
+
+static void price_apply_value_layout(void)
+{
+    const lv_font_t *value_font = &montserrat_140;
+    const lv_font_t *prefix_font = &montserrat_140;
+    int32_t letter_space = 2;
+    int32_t pad_column = 10;
+    size_t value_len = strlen(current_price_text);
+
+    if (value_len >= 10)
+    {
+        value_font = &montserrat_120;
+        prefix_font = &montserrat_120;
+        letter_space = 1;
+        pad_column = 4;
+    }
+
+    if (value_len >= 11)
+    {
+        pad_column = 2;
+    }
+
+    if (price_value_cont)
+    {
+        lv_obj_set_style_pad_column(price_value_cont, pad_column, 0);
+    }
+    if (price_shadow_cont)
+    {
+        lv_obj_set_style_pad_column(price_shadow_cont, pad_column, 0);
+    }
+    if (price_prefix_label)
+    {
+        lv_obj_set_style_text_font(price_prefix_label, prefix_font, 0);
+    }
+    if (price_prefix_shadow_label)
+    {
+        lv_obj_set_style_text_font(price_prefix_shadow_label, prefix_font, 0);
+    }
+    if (price_value_label)
+    {
+        lv_obj_set_style_text_font(price_value_label, value_font, 0);
+        lv_obj_set_style_text_letter_space(price_value_label, letter_space, 0);
+    }
+    if (price_value_shadow_label)
+    {
+        lv_obj_set_style_text_font(price_value_shadow_label, value_font, 0);
+        lv_obj_set_style_text_letter_space(price_value_shadow_label, letter_space, 0);
+    }
+}
+
+static void price_sync_selected_currency(void)
+{
+    price_currency_t selected_currency = settings_get_price_currency();
+
+    if (!price_currency_initialized || displayed_price_currency != selected_currency)
+    {
+        displayed_price_currency = selected_currency;
+        price_currency_initialized = true;
+        strncpy(current_price_text, "--", sizeof(current_price_text) - 1);
+        current_price_text[sizeof(current_price_text) - 1] = '\0';
+        strncpy(current_price_status, "LOADING...", sizeof(current_price_status) - 1);
+        current_price_status[sizeof(current_price_status) - 1] = '\0';
+    }
+
+    price_apply_currency_labels();
+    price_apply_value_layout();
+}
+
+static void price_build_api_urls(char *primary_url, size_t primary_size, char *fallback_url, size_t fallback_size, char *currency_code, size_t currency_code_size)
+{
+    const char *selected_code = settings_get_price_currency_code();
+    char lower_code[8];
+    size_t i = 0;
+
+    for (; selected_code[i] != '\0' && i < sizeof(lower_code) - 1; i++)
+    {
+        lower_code[i] = (char)tolower((unsigned char)selected_code[i]);
+    }
+    lower_code[i] = '\0';
+
+    if (currency_code && currency_code_size > 0)
+    {
+        strncpy(currency_code, selected_code, currency_code_size - 1);
+        currency_code[currency_code_size - 1] = '\0';
+    }
+
+    if (primary_url && primary_size > 0)
+    {
+        snprintf(primary_url, primary_size,
+                 "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=%s",
+                 lower_code);
+    }
+
+    if (fallback_url && fallback_size > 0)
+    {
+        snprintf(fallback_url, fallback_size,
+                 "https://api.coinbase.com/v2/prices/BTC-%s/spot",
+                 selected_code);
+    }
+}
+
 static void price_task(void *arg)
 {
     (void)arg;
@@ -424,6 +635,11 @@ static void price_task(void *arg)
         {
             if (updated)
             {
+                price_apply_value_layout();
+                if (price_value_shadow_label)
+                {
+                    lv_label_set_text(price_value_shadow_label, current_price_text);
+                }
                 if (price_value_label)
                 {
                     lv_label_set_text(price_value_label, current_price_text);
@@ -446,17 +662,17 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
 {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_size(btn, 56, 46);
-    lv_obj_set_style_bg_color(btn, active ? COLOR_ACCENT : COLOR_CARD_BG, 0);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(btn, active ? 0 : 2, 0);
-    lv_obj_set_style_border_color(btn, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_opa(btn, active ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_bg_opa(btn, active ? LV_OPA_20 : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(btn, 2, 0);
+    lv_obj_set_style_border_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_border_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_color(label, active ? COLOR_TEXT_ON_ACCENT : COLOR_ACCENT, 0);
+    lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
     lv_obj_center(label);
 
@@ -472,17 +688,17 @@ static lv_obj_t *create_bottom_nav_btn_img(lv_obj_t *parent, const lv_img_dsc_t 
 {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_size(btn, 56, 46);
-    lv_obj_set_style_bg_color(btn, active ? COLOR_ACCENT : COLOR_CARD_BG, 0);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(btn, active ? 0 : 2, 0);
-    lv_obj_set_style_border_color(btn, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_opa(btn, active ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_bg_opa(btn, active ? LV_OPA_20 : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(btn, 2, 0);
+    lv_obj_set_style_border_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_border_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
     lv_obj_t *img = lv_img_create(btn);
     lv_img_set_src(img, img_dsc);
-    lv_obj_set_style_img_recolor(img, active ? COLOR_TEXT_ON_ACCENT : COLOR_ACCENT, 0);
+    lv_obj_set_style_img_recolor(img, COLOR_NAV_ICON, 0);
     lv_obj_set_style_img_recolor_opa(img, LV_OPA_COVER, 0);
     lv_obj_center(img);
 
@@ -531,6 +747,14 @@ void price_wifi_clicked(lv_event_t *e)
     LV_UNUSED(e);
     wifi_screen_create();
     lv_scr_load(wifi_get_screen());
+    price_screen_destroy();
+}
+
+void price_weather_clicked(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    weather_screen_create();
+    lv_scr_load(weather_get_screen());
     price_screen_destroy();
 }
 

@@ -4,6 +4,8 @@ static const char *TAG = "example";
 
 static uint8_t current_brightness = LCD_BACKLIGHT_DEFAULT_BRIGHTNESS;
 static bool backlight_initialized = false;
+static uint8_t wake_brightness = LCD_BACKLIGHT_DEFAULT_BRIGHTNESS;
+static bool screen_off = false;
 
 // VSYNC event callback function
 IRAM_ATTR static bool rgb_lcd_on_vsync_event(esp_lcd_panel_handle_t panel, const esp_lcd_rgb_panel_event_data_t *edata, void *user_ctx)
@@ -409,6 +411,10 @@ esp_err_t lcd_backlight_set_brightness(uint8_t brightness_percent)
     }
 
     current_brightness = brightness_percent;
+    if (brightness_percent > 0) {
+        wake_brightness = brightness_percent;
+        screen_off = false;
+    }
     ESP_LOGI(TAG, "TPS61161 backlight brightness set to %d%% on GPIO%d (duty: %lu)", brightness_percent, LCD_BACKLIGHT_PWM_GPIO, duty);
 
     return ESP_OK;
@@ -504,6 +510,46 @@ esp_err_t lcd_backlight_disable(void)
 
     ESP_LOGI(TAG, "TPS61161 backlight disabled (PWM OFF on GPIO%d)", LCD_BACKLIGHT_PWM_GPIO);
     return ESP_OK;
+}
+
+esp_err_t lcd_screen_turn_off(void)
+{
+    if (!backlight_initialized) {
+        ESP_LOGE(TAG, "PWM backlight not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (current_brightness > 0) {
+        wake_brightness = current_brightness;
+    }
+
+    esp_err_t ret = lcd_backlight_disable();
+    if (ret == ESP_OK) {
+        screen_off = true;
+        ESP_LOGI(TAG, "Screen turned off, wake brightness saved at %d%%", wake_brightness);
+    }
+    return ret;
+}
+
+esp_err_t lcd_screen_wake(void)
+{
+    if (!backlight_initialized) {
+        ESP_LOGE(TAG, "PWM backlight not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    uint8_t target_brightness = wake_brightness > 0 ? wake_brightness : LCD_BACKLIGHT_DEFAULT_BRIGHTNESS;
+    esp_err_t ret = lcd_backlight_set_brightness(target_brightness);
+    if (ret == ESP_OK) {
+        screen_off = false;
+        ESP_LOGI(TAG, "Screen woke to %d%% brightness", target_brightness);
+    }
+    return ret;
+}
+
+bool lcd_screen_is_off(void)
+{
+    return screen_off;
 }
 
 /******************************* Example code **************************************/

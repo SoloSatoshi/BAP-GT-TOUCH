@@ -5,6 +5,7 @@
  */
 
 #include "ota_screen.h"
+#include "background.h"
 #include "custom_fonts.h"
 #include "esp_log.h"
 #include <stdio.h>
@@ -22,6 +23,7 @@ void ota_screen_show(void)
 
     // Create new screen
     ota_screen = lv_obj_create(NULL);
+    screen_background_apply(ota_screen);
     lv_obj_set_style_bg_color(ota_screen, lv_color_hex(0x000000), 0);
 
     // Title

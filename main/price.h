@@ -10,6 +10,7 @@ lv_obj_t *price_get_screen(void);
 void price_home_clicked(lv_event_t *e);
 void price_block_clicked(lv_event_t *e);
 void price_clock_clicked(lv_event_t *e);
+void price_weather_clicked(lv_event_t *e);
 void price_mempool_clicked(lv_event_t *e);
 void price_wifi_clicked(lv_event_t *e);
 void price_settings_clicked(lv_event_t *e);

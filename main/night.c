@@ -5,7 +5,9 @@
 #include "block.h"
 #include "clock.h"
 #include "price.h"
+#include "weather.h"
 #include "mempool.h"
+#include "background.h"
 #include "bap.h"
 #include "custom_fonts.h"
 #include "stdio.h"
@@ -45,6 +47,7 @@ void night_screen_create(void)
     night_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(night_screen, COLOR_NIGHT_BG, 0);
     lv_obj_set_style_bg_opa(night_screen, LV_OPA_COVER, 0);
+    screen_background_apply(night_screen);
     lv_obj_clear_flag(night_screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(night_screen, LV_SCROLLBAR_MODE_OFF);
 
@@ -67,7 +70,7 @@ void night_screen_create(void)
     lv_obj_set_size(hashrate_chart, SCREEN_WIDTH - 70, SCREEN_HEIGHT - 140);
     lv_obj_align(hashrate_chart, LV_ALIGN_BOTTOM_RIGHT, 0, -48);
     lv_obj_set_style_bg_color(hashrate_chart, COLOR_NIGHT_BG, 0);
-    lv_obj_set_style_bg_opa(hashrate_chart, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_opa(hashrate_chart, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(hashrate_chart, 0, 0);
     lv_obj_set_style_radius(hashrate_chart, 0, 0);
     lv_obj_set_style_pad_all(hashrate_chart, 0, 0);
@@ -310,6 +313,7 @@ static void create_bottom_nav(void)
     create_bottom_nav_btn_img(bottom_nav, &cubes_solid_full, night_mempool_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &clock_solid_full, night_clock_clicked, false);
     create_bottom_nav_btn(bottom_nav, "$", night_price_clicked, false);
+    create_bottom_nav_btn(bottom_nav, "W", night_weather_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, night_wifi_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, night_settings_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_EYE_OPEN, NULL, true);
@@ -319,17 +323,17 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
 {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_size(btn, 56, 46);
-    lv_obj_set_style_bg_color(btn, active ? COLOR_NIGHT_ACCENT : COLOR_CARD_BG, 0);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(btn, active ? 0 : 2, 0);
-    lv_obj_set_style_border_color(btn, COLOR_NIGHT_ACCENT, 0);
-    lv_obj_set_style_border_opa(btn, active ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_bg_opa(btn, active ? LV_OPA_20 : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(btn, 2, 0);
+    lv_obj_set_style_border_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_border_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_color(label, active ? COLOR_TEXT_ON_ACCENT : COLOR_NIGHT_ACCENT, 0);
+    lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
     lv_obj_center(label);
 
@@ -345,17 +349,17 @@ static lv_obj_t *create_bottom_nav_btn_img(lv_obj_t *parent, const lv_img_dsc_t 
 {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_size(btn, 56, 46);
-    lv_obj_set_style_bg_color(btn, active ? COLOR_NIGHT_ACCENT : COLOR_CARD_BG, 0);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(btn, active ? 0 : 2, 0);
-    lv_obj_set_style_border_color(btn, COLOR_NIGHT_ACCENT, 0);
-    lv_obj_set_style_border_opa(btn, active ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_bg_opa(btn, active ? LV_OPA_20 : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(btn, 2, 0);
+    lv_obj_set_style_border_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_border_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
     lv_obj_t *img = lv_img_create(btn);
     lv_img_set_src(img, img_dsc);
-    lv_obj_set_style_img_recolor(img, active ? COLOR_TEXT_ON_ACCENT : COLOR_NIGHT_ACCENT, 0);
+    lv_obj_set_style_img_recolor(img, COLOR_NAV_ICON, 0);
     lv_obj_set_style_img_recolor_opa(img, LV_OPA_COVER, 0);
     lv_obj_center(img);
 
@@ -406,6 +410,13 @@ void night_price_clicked(lv_event_t *e)
 {
     price_screen_create();
     lv_scr_load(price_get_screen());
+    night_screen_destroy();
+}
+
+void night_weather_clicked(lv_event_t *e)
+{
+    weather_screen_create();
+    lv_scr_load(weather_get_screen());
     night_screen_destroy();
 }
 

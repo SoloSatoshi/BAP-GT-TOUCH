@@ -16,10 +16,14 @@
 #include "lvgl.h"
 #include "lvgl_port.h"
 #include "wifi.h"
+#include "waveshare_rgb_lcd_port.h"
 
 static const char *TAG = "lv_port";                      // Tag for logging
 static SemaphoreHandle_t lvgl_mux;                       // LVGL mutex for synchronization
 static TaskHandle_t lvgl_task_handle = NULL;             // Handle for the LVGL task
+static bool hot_corner_latched = false;                  // Prevent a single press from toggling screen power twice
+
+#define SCREEN_POWER_HOT_CORNER_SIZE 60
 
 #if EXAMPLE_LVGL_PORT_ROTATION_DEGREE != 0
 // Function to get the next frame buffer for double buffering
@@ -443,11 +447,30 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     /* Read data from touch controller */
     bool touchpad_pressed = esp_lcd_touch_get_coordinates(tp, &touchpad_x, &touchpad_y, NULL, &touchpad_cnt, 1); // Get touch coordinates
     if (touchpad_pressed && touchpad_cnt > 0) {
+        bool in_hot_corner = touchpad_x < SCREEN_POWER_HOT_CORNER_SIZE && touchpad_y < SCREEN_POWER_HOT_CORNER_SIZE;
+
+        if (lcd_screen_is_off()) {
+            lcd_screen_wake();
+            hot_corner_latched = true;
+            data->state = LV_INDEV_STATE_RELEASED; // First touch only wakes the screen
+            return;
+        }
+
+        // The hidden top-left hot corner toggles screen power and requires a release before it can trigger again.
+        if (in_hot_corner) {
+            if (!hot_corner_latched) {
+                lcd_screen_turn_off();
+                hot_corner_latched = true;
+            }
+            data->state = LV_INDEV_STATE_RELEASED;
+            return;
+        }
         data->point.x = touchpad_x; // Set the X coordinate
         data->point.y = touchpad_y; // Set the Y coordinate
         data->state = LV_INDEV_STATE_PRESSED; // Set state to pressed
         ESP_LOGD(TAG, "Touch position: %d,%d", touchpad_x, touchpad_y); // Log touch position
     } else {
+        hot_corner_latched = false;
         data->state = LV_INDEV_STATE_RELEASED; // Set state to released
     }
 }
@@ -463,6 +486,8 @@ static lv_indev_t *indev_init(esp_lcd_touch_handle_t tp)
     indev_drv_tp.type = LV_INDEV_TYPE_POINTER; // Set the device type to pointer (touchpad)
     indev_drv_tp.read_cb = touchpad_read; // Set the read callback function
     indev_drv_tp.user_data = tp; // Set user data to the touch panel handle
+    indev_drv_tp.scroll_limit = 6; // Start scrolling a bit sooner
+    indev_drv_tp.scroll_throw = 18; // Increase flick distance for faster-feeling scrolling
 
     return lv_indev_drv_register(&indev_drv_tp); // Register the input device driver
 }

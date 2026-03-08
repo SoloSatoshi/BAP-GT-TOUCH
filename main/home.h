@@ -2,6 +2,7 @@
 #define HOME_H
 
 #include "lvgl.h"
+#include "theme.h"
 
 // Hardware information structure
 typedef struct {
@@ -22,15 +23,16 @@ typedef struct {
 #define SCREEN_HEIGHT 480
 
 // Colors (Bitaxe site theme)
-#define COLOR_BACKGROUND    lv_color_hex(0x050506)
-#define COLOR_CARD_BG       lv_color_hex(0x0F1218)
-#define COLOR_ACCENT        lv_color_hex(0xD4021B)
-#define COLOR_RED           lv_color_hex(0xD4021B)
-#define COLOR_TEXT_PRIMARY  lv_color_hex(0xFFFFFF)
-#define COLOR_TEXT_SECONDARY lv_color_hex(0xA3A3A3)
-#define COLOR_TEXT_ON_ACCENT lv_color_hex(0x000000)
-#define COLOR_BORDER        lv_color_hex(0x1A1D24)
-#define COLOR_NAV_BG        lv_color_hex(0x0C0F14)
+#define COLOR_BACKGROUND     ui_theme_get_background_color()
+#define COLOR_CARD_BG        ui_theme_get_card_bg_color()
+#define COLOR_ACCENT         ui_theme_get_accent_color()
+#define COLOR_RED            ui_theme_get_red_color()
+#define COLOR_TEXT_PRIMARY   ui_theme_get_text_primary_color()
+#define COLOR_TEXT_SECONDARY ui_theme_get_text_secondary_color()
+#define COLOR_TEXT_ON_ACCENT ui_theme_get_text_on_accent_color()
+#define COLOR_BORDER         ui_theme_get_border_color()
+#define COLOR_NAV_BG         ui_theme_get_nav_bg_color()
+#define COLOR_NAV_ICON       ui_theme_get_nav_icon_color()
 
 // Function declarations
 void home_screen_create(void);
@@ -61,6 +63,7 @@ void home_wifi_clicked(lv_event_t * e);
 void home_block_clicked(lv_event_t * e);
 void home_clock_clicked(lv_event_t * e);
 void home_price_clicked(lv_event_t * e);
+void home_weather_clicked(lv_event_t * e);
 void home_mempool_clicked(lv_event_t * e);
 
 #endif // HOME_H

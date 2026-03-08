@@ -39,6 +39,7 @@ void wifi_home_clicked(lv_event_t * e);
 void wifi_block_clicked(lv_event_t * e);
 void wifi_clock_clicked(lv_event_t * e);
 void wifi_price_clicked(lv_event_t * e);
+void wifi_weather_clicked(lv_event_t * e);
 void wifi_mempool_clicked(lv_event_t * e);
 void wifi_settings_clicked(lv_event_t * e);
 void wifi_night_clicked(lv_event_t * e);

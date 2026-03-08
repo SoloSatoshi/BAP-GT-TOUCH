@@ -4,9 +4,11 @@
 #include "block.h"
 #include "clock.h"
 #include "price.h"
+#include "weather.h"
 #include "wifi.h"
 #include "settings.h"
 #include "night.h"
+#include "background.h"
 #include "lvgl_port.h"
 #include "sdkconfig.h"
 #include "esp_event.h"
@@ -31,6 +33,8 @@
 #define CARD_H 210
 
 static const char *MEMPOOL_API_URL = "https://mempool.space/api/v1/blocks";
+static const char *MEMPOOL_NEXT_API_URL = "https://mempool.space/api/v1/fees/mempool-blocks";
+static const char *MEMPOOL_RECOMMENDED_API_URL = "https://mempool.space/api/v1/fees/recommended";
 
 typedef struct
 {
@@ -45,6 +49,25 @@ typedef struct
     int minutes_ago;
 } mempool_block_t;
 
+typedef struct
+{
+    bool valid;
+    int tx_count;
+    double median_fee;
+    double fee_min;
+    double fee_max;
+    long long total_fees_sat;
+    long long block_vsize;
+} mempool_next_block_t;
+
+typedef struct
+{
+    bool valid;
+    int fastest_fee;
+    int half_hour_fee;
+    int hour_fee;
+} mempool_recommended_fees_t;
+
 static lv_obj_t *mempool_screen = NULL;
 static lv_obj_t *mempool_status_label = NULL;
 static lv_obj_t *mempool_row = NULL;
@@ -55,6 +78,8 @@ static bool mempool_sntp_started = false;
 
 static mempool_block_t mempool_blocks[MEMPOOL_MAX_BLOCKS];
 static int mempool_block_count = 0;
+static mempool_next_block_t mempool_next_block = {0};
+static mempool_recommended_fees_t mempool_recommended_fees = {0};
 
 static char mempool_http_buf[MEMPOOL_HTTP_BUF_SIZE];
 static int mempool_http_len = 0;
@@ -63,6 +88,10 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
 static lv_obj_t *create_bottom_nav_btn_img(lv_obj_t *parent, const lv_img_dsc_t *img_dsc, lv_event_cb_t event_cb, bool active);
 static void mempool_task(void *arg);
 static bool mempool_fetch_once(void);
+static bool mempool_http_get(const char *url);
+static bool mempool_fetch_mined_blocks(void);
+static bool mempool_fetch_next_block(void);
+static bool mempool_fetch_recommended_fees(void);
 static bool mempool_ensure_netif(void);
 static bool mempool_wifi_connected(void);
 static bool mempool_ip_ready(void);
@@ -118,18 +147,21 @@ void mempool_screen_create(void)
     mempool_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(mempool_screen, COLOR_BACKGROUND, 0);
     lv_obj_set_style_bg_opa(mempool_screen, LV_OPA_COVER, 0);
+    screen_background_apply(mempool_screen);
     lv_obj_clear_flag(mempool_screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(mempool_screen, LV_SCROLLBAR_MODE_OFF);
 
+    const bool cyberpunk = ui_theme_get_current() == UI_THEME_CYBERPUNK;
+
     lv_obj_t *title = lv_label_create(mempool_screen);
     lv_label_set_text(title, "LATEST BLOCKS");
-    lv_obj_set_style_text_color(title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_color(title, cyberpunk ? COLOR_NAV_ICON : COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 18);
 
     mempool_status_label = lv_label_create(mempool_screen);
     lv_label_set_text(mempool_status_label, "LOADING...");
-    lv_obj_set_style_text_color(mempool_status_label, COLOR_TEXT_SECONDARY, 0);
+    lv_obj_set_style_text_color(mempool_status_label, cyberpunk ? COLOR_NAV_ICON : COLOR_TEXT_SECONDARY, 0);
     lv_obj_set_style_text_opa(mempool_status_label, (lv_opa_t)192, 0);
     lv_obj_set_style_text_font(mempool_status_label, &lv_font_montserrat_16, 0);
     lv_obj_align(mempool_status_label, LV_ALIGN_TOP_MID, 0, 48);
@@ -175,6 +207,7 @@ void mempool_screen_create(void)
     create_bottom_nav_btn_img(bottom_nav, &cubes_solid_full, NULL, true);
     create_bottom_nav_btn_img(bottom_nav, &clock_solid_full, mempool_clock_clicked, false);
     create_bottom_nav_btn(bottom_nav, "$", mempool_price_clicked, false);
+    create_bottom_nav_btn(bottom_nav, "W", mempool_weather_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, mempool_wifi_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, mempool_settings_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_EYE_OPEN, mempool_night_clicked, false);
@@ -270,7 +303,7 @@ static void mempool_task(void *arg)
         {
             if (updated)
             {
-                mempool_set_status("LIVE (from mempool.space)");
+                mempool_set_status("LIVE");
                 mempool_rebuild_cards();
                 lvgl_port_unlock();
                 vTaskDelay(pdMS_TO_TICKS(MEMPOOL_FETCH_INTERVAL_MS));
@@ -287,8 +320,18 @@ static void mempool_task(void *arg)
 
 static bool mempool_fetch_once(void)
 {
+    mempool_next_block.valid = false;
+    mempool_recommended_fees.valid = false;
+    bool next_ok = mempool_fetch_next_block();
+    bool fees_ok = mempool_fetch_recommended_fees();
+    bool mined_ok = mempool_fetch_mined_blocks();
+    return mined_ok || next_ok || fees_ok;
+}
+
+static bool mempool_http_get(const char *url)
+{
     esp_http_client_config_t config = {
-        .url = MEMPOOL_API_URL,
+        .url = url,
         .event_handler = mempool_http_event_handler,
         .timeout_ms = 12000,
     };
@@ -314,6 +357,16 @@ static bool mempool_fetch_once(void)
     esp_http_client_cleanup(client);
 
     if (err != ESP_OK || status < 200 || status >= 300 || mempool_http_len == 0)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+static bool mempool_fetch_mined_blocks(void)
+{
+    if (!mempool_http_get(MEMPOOL_API_URL))
     {
         return false;
     }
@@ -379,6 +432,85 @@ static bool mempool_fetch_once(void)
     }
 
     return mempool_block_count > 0;
+}
+
+static bool mempool_fetch_next_block(void)
+{
+    if (!mempool_http_get(MEMPOOL_NEXT_API_URL))
+    {
+        return false;
+    }
+
+    int starts[1];
+    int ends[1];
+    int obj_count = split_top_level_objects(mempool_http_buf, mempool_http_len, starts, ends, 1);
+    if (obj_count <= 0)
+    {
+        return false;
+    }
+
+    int len = ends[0] - starts[0] + 1;
+    if (len <= 0 || len > MEMPOOL_HTTP_BUF_SIZE - 1)
+    {
+        return false;
+    }
+
+    char *obj = malloc((size_t)len + 1);
+    if (!obj)
+    {
+        return false;
+    }
+    memcpy(obj, mempool_http_buf + starts[0], (size_t)len);
+    obj[len] = '\0';
+
+    long long txc = 0;
+    long long total_fees = 0;
+    long long block_vsize = 0;
+    double median = 0.0;
+    double fee_min = 0.0;
+    double fee_max = 0.0;
+
+    json_get_ll(obj, "\"nTx\":", &txc);
+    json_get_ll(obj, "\"totalFees\":", &total_fees);
+    json_get_ll(obj, "\"blockVSize\":", &block_vsize);
+    json_get_double(obj, "\"medianFee\":", &median);
+    parse_fee_range(obj, &fee_min, &fee_max);
+
+    mempool_next_block.valid = true;
+    mempool_next_block.tx_count = (int)txc;
+    mempool_next_block.median_fee = median;
+    mempool_next_block.fee_min = fee_min;
+    mempool_next_block.fee_max = fee_max;
+    mempool_next_block.total_fees_sat = total_fees;
+    mempool_next_block.block_vsize = block_vsize;
+
+    free(obj);
+    return true;
+}
+
+static bool mempool_fetch_recommended_fees(void)
+{
+    if (!mempool_http_get(MEMPOOL_RECOMMENDED_API_URL))
+    {
+        return false;
+    }
+
+    long long fastest = 0;
+    long long half_hour = 0;
+    long long hour = 0;
+
+    if (!json_get_ll(mempool_http_buf, "\"fastestFee\":", &fastest))
+    {
+        return false;
+    }
+    json_get_ll(mempool_http_buf, "\"halfHourFee\":", &half_hour);
+    json_get_ll(mempool_http_buf, "\"hourFee\":", &hour);
+
+    mempool_recommended_fees.valid = true;
+    mempool_recommended_fees.fastest_fee = (int)fastest;
+    mempool_recommended_fees.half_hour_fee = (int)half_hour;
+    mempool_recommended_fees.hour_fee = (int)hour;
+    return true;
 }
 
 static bool mempool_ensure_netif(void)
@@ -469,16 +601,20 @@ static void mempool_rebuild_cards(void)
 
     lv_obj_clean(mempool_row);
 
-    if (mempool_block_count <= 0)
+    if (mempool_block_count <= 0 && !mempool_next_block.valid)
     {
         return;
     }
 
-    const lv_color_t color_height = lv_color_hex(0x00E5FF);
-    const lv_color_t color_card = lv_color_hex(0x0B1E3A);
-    const lv_color_t color_mid = lv_color_hex(0x1E5BFF);
-    const lv_color_t color_bottom = lv_color_hex(0x7C3BFF);
-    const lv_color_t color_fee = lv_color_hex(0xFFE600);
+    const ui_theme_t theme = ui_theme_get_current();
+    const bool monochrome = theme == UI_THEME_MONOCHROME;
+    const bool space = theme == UI_THEME_SPACE;
+    const bool cyberpunk = theme == UI_THEME_CYBERPUNK;
+    const lv_color_t color_height = monochrome ? COLOR_TEXT_PRIMARY : (cyberpunk ? COLOR_NAV_ICON : lv_color_hex(0x00E5FF));
+    const lv_color_t color_card = cyberpunk ? lv_color_black() : ((monochrome || space) ? ui_theme_get_surface_fill_color() : lv_color_hex(0x0B1E3A));
+    const lv_color_t color_mid = cyberpunk ? lv_color_black() : ((monochrome || space) ? ui_theme_get_surface_fill_color() : lv_color_hex(0x1E5BFF));
+    const lv_color_t color_bottom = cyberpunk ? lv_color_black() : ((monochrome || space) ? ui_theme_get_surface_fill_color() : lv_color_hex(0x7C3BFF));
+    const lv_color_t color_fee = monochrome ? lv_color_hex(0xD9D9D9) : (cyberpunk ? COLOR_NAV_ICON : lv_color_hex(0xFFE600));
     const int row_h = lv_obj_get_height(mempool_row);
     const int wrap_top_offset = 38;
     const int wrap_pool_h = 24;
@@ -494,6 +630,171 @@ static void mempool_rebuild_cards(void)
         card_h = 200;
     }
 
+    if (mempool_next_block.valid)
+    {
+        lv_obj_t *card_wrap = lv_obj_create(mempool_row);
+        lv_obj_set_size(card_wrap, CARD_W, card_h + wrap_extra);
+        lv_obj_set_style_bg_opa(card_wrap, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(card_wrap, 0, 0);
+        lv_obj_set_style_pad_all(card_wrap, 0, 0);
+        lv_obj_clear_flag(card_wrap, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *height_chip = NULL;
+        if (cyberpunk)
+        {
+            height_chip = lv_obj_create(card_wrap);
+            lv_obj_set_size(height_chip, 150, 32);
+            lv_obj_align(height_chip, LV_ALIGN_TOP_MID, 0, -2);
+            lv_obj_set_style_bg_color(height_chip, lv_color_black(), 0);
+            lv_obj_set_style_bg_opa(height_chip, LV_OPA_50, 0);
+            lv_obj_set_style_border_width(height_chip, 0, 0);
+            lv_obj_set_style_radius(height_chip, 16, 0);
+            lv_obj_set_style_pad_all(height_chip, 0, 0);
+            lv_obj_set_style_shadow_width(height_chip, 0, 0);
+            lv_obj_clear_flag(height_chip, LV_OBJ_FLAG_SCROLLABLE);
+        }
+
+        lv_obj_t *height_label = lv_label_create(card_wrap);
+        lv_label_set_text(height_label, "NEXT BLOCK");
+        lv_obj_set_style_text_color(height_label, cyberpunk ? COLOR_TEXT_PRIMARY : color_height, 0);
+        lv_obj_set_style_text_font(height_label, &lv_font_montserrat_20, 0);
+        lv_obj_align(height_label, LV_ALIGN_TOP_MID, 0, 2);
+
+        lv_obj_t *card = lv_obj_create(card_wrap);
+        lv_obj_set_size(card, CARD_W, card_h);
+        lv_obj_align(card, LV_ALIGN_TOP_MID, 0, wrap_top_offset);
+        lv_obj_set_style_radius(card, cyberpunk ? 20 : 8, 0);
+        lv_obj_set_style_bg_color(card, color_card, 0);
+        lv_obj_set_style_bg_grad_color(card, color_card, 0);
+        lv_obj_set_style_bg_grad_dir(card, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_bg_opa(card, cyberpunk ? LV_OPA_50 : (space ? LV_OPA_70 : LV_OPA_COVER), 0);
+        lv_obj_set_style_border_width(card, (monochrome || space || cyberpunk) ? 2 : 0, 0);
+        lv_obj_set_style_border_color(card, (space || cyberpunk) ? COLOR_NAV_ICON : ui_theme_get_surface_outline_color(), 0);
+        lv_obj_set_style_border_opa(card, (monochrome || space || cyberpunk) ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_shadow_width(card, cyberpunk ? 0 : 12, 0);
+        lv_obj_set_style_shadow_color(card, lv_color_hex(0x02060D), 0);
+        lv_obj_set_style_shadow_opa(card, LV_OPA_30, 0);
+        lv_obj_set_style_shadow_ofs_y(card, 4, 0);
+        lv_obj_set_style_pad_all(card, 0, 0);
+        lv_obj_set_style_clip_corner(card, true, 0);
+        lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+        const int bottom_bar_h = 52;
+        int content_h = card_h - bottom_bar_h;
+        if (content_h < 120)
+        {
+            content_h = 120;
+        }
+
+        lv_obj_t *mid = lv_obj_create(card);
+        lv_obj_set_size(mid, CARD_W, content_h);
+        lv_obj_align(mid, LV_ALIGN_TOP_MID, 0, 0);
+        lv_obj_set_style_radius(mid, cyberpunk ? 20 : 8, 0);
+        lv_obj_set_style_bg_color(mid, color_mid, 0);
+        lv_obj_set_style_bg_grad_color(mid, (monochrome || space || cyberpunk) ? color_mid : lv_color_hex(0x143FBA), 0);
+        lv_obj_set_style_bg_grad_dir(mid, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_bg_opa(mid, (monochrome || space || cyberpunk) ? LV_OPA_TRANSP : LV_OPA_60, 0);
+        lv_obj_set_style_border_width(mid, 0, 0);
+        lv_obj_set_style_pad_all(mid, 0, 0);
+        lv_obj_clear_flag(mid, LV_OBJ_FLAG_SCROLLABLE);
+
+        const int median_y = 10;
+        const int range_y = median_y + 28;
+        const int btc_y = range_y + 34;
+        int priority_y = btc_y + 36;
+        if (priority_y > content_h - 56)
+        {
+            priority_y = content_h - 56;
+        }
+
+        char median_txt[32];
+        int median_fee_i = (int)(mempool_next_block.median_fee + 0.5);
+        lv_snprintf(median_txt, sizeof(median_txt), "~%d sat/vB", median_fee_i);
+        lv_obj_t *median_label = lv_label_create(card);
+        lv_label_set_text(median_label, median_txt);
+        lv_obj_set_style_text_color(median_label, COLOR_TEXT_PRIMARY, 0);
+        lv_obj_set_style_text_font(median_label, &lv_font_montserrat_20, 0);
+        lv_obj_align(median_label, LV_ALIGN_TOP_MID, 0, median_y);
+
+        char fee_min_txt[16];
+        char fee_max_txt[16];
+        format_fee_value(mempool_next_block.fee_min, fee_min_txt, sizeof(fee_min_txt));
+        format_fee_value(mempool_next_block.fee_max, fee_max_txt, sizeof(fee_max_txt));
+        char range_txt[48];
+        lv_snprintf(range_txt, sizeof(range_txt), "%s - %s sat/vB", fee_min_txt, fee_max_txt);
+        lv_obj_t *range_label = lv_label_create(card);
+        lv_label_set_text(range_label, range_txt);
+        lv_obj_set_style_text_color(range_label, color_fee, 0);
+        lv_obj_set_style_text_font(range_label, &lv_font_montserrat_14, 0);
+        lv_obj_align(range_label, LV_ALIGN_TOP_MID, 0, range_y);
+
+        char btc_txt[32];
+        format_btc_from_sats(mempool_next_block.total_fees_sat, btc_txt, sizeof(btc_txt));
+        lv_obj_t *btc_label = lv_label_create(card);
+        lv_label_set_text(btc_label, btc_txt);
+        lv_obj_set_style_text_color(btc_label, COLOR_TEXT_PRIMARY, 0);
+        lv_obj_set_style_text_font(btc_label, &lv_font_montserrat_28, 0);
+        lv_obj_align(btc_label, LV_ALIGN_TOP_MID, 0, btc_y);
+
+        char next_fee_txt[32];
+        char half_hour_txt[32];
+        char hour_txt[32];
+        if (mempool_recommended_fees.valid)
+        {
+            lv_snprintf(next_fee_txt, sizeof(next_fee_txt), "Next: %d sat/vB", mempool_recommended_fees.fastest_fee);
+            lv_snprintf(half_hour_txt, sizeof(half_hour_txt), "30m: %d sat/vB", mempool_recommended_fees.half_hour_fee);
+            lv_snprintf(hour_txt, sizeof(hour_txt), "1h: %d sat/vB", mempool_recommended_fees.hour_fee);
+        }
+        else
+        {
+            lv_snprintf(next_fee_txt, sizeof(next_fee_txt), "Next: --");
+            lv_snprintf(half_hour_txt, sizeof(half_hour_txt), "30m: --");
+            lv_snprintf(hour_txt, sizeof(hour_txt), "1h: --");
+        }
+
+        lv_obj_t *next_fee_label = lv_label_create(card);
+        lv_label_set_text(next_fee_label, next_fee_txt);
+        lv_obj_set_width(next_fee_label, CARD_W - 24);
+        lv_obj_set_style_text_align(next_fee_label, LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_set_style_text_color(next_fee_label, color_fee, 0);
+        lv_obj_set_style_text_font(next_fee_label, &lv_font_montserrat_14, 0);
+        lv_obj_align(next_fee_label, LV_ALIGN_TOP_LEFT, 12, priority_y);
+
+        lv_obj_t *half_hour_label = lv_label_create(card);
+        lv_label_set_text(half_hour_label, half_hour_txt);
+        lv_obj_set_width(half_hour_label, CARD_W - 24);
+        lv_obj_set_style_text_align(half_hour_label, LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_set_style_text_color(half_hour_label, COLOR_TEXT_PRIMARY, 0);
+        lv_obj_set_style_text_font(half_hour_label, &lv_font_montserrat_14, 0);
+        lv_obj_align(half_hour_label, LV_ALIGN_TOP_LEFT, 12, priority_y + 20);
+
+        lv_obj_t *hour_label = lv_label_create(card);
+        lv_label_set_text(hour_label, hour_txt);
+        lv_obj_set_width(hour_label, CARD_W - 24);
+        lv_obj_set_style_text_align(hour_label, LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_set_style_text_color(hour_label, COLOR_TEXT_PRIMARY, 0);
+        lv_obj_set_style_text_font(hour_label, &lv_font_montserrat_14, 0);
+        lv_obj_align(hour_label, LV_ALIGN_TOP_LEFT, 12, priority_y + 40);
+
+        lv_obj_t *bottom_bar = lv_obj_create(card);
+        lv_obj_set_size(bottom_bar, CARD_W, bottom_bar_h);
+        lv_obj_align(bottom_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
+        lv_obj_set_style_radius(bottom_bar, cyberpunk ? 20 : 0, 0);
+        lv_obj_set_style_bg_color(bottom_bar, color_bottom, 0);
+        lv_obj_set_style_bg_grad_color(bottom_bar, (monochrome || space || cyberpunk) ? color_bottom : lv_color_hex(0x6126D8), 0);
+        lv_obj_set_style_bg_grad_dir(bottom_bar, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_bg_opa(bottom_bar, cyberpunk ? LV_OPA_50 : (space ? LV_OPA_70 : LV_OPA_COVER), 0);
+        lv_obj_set_style_border_width(bottom_bar, 0, 0);
+        lv_obj_set_style_pad_all(bottom_bar, 0, 0);
+        lv_obj_clear_flag(bottom_bar, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *ago_label = lv_label_create(bottom_bar);
+        lv_label_set_text(ago_label, "ESTIMATED");
+        lv_obj_set_style_text_color(ago_label, COLOR_TEXT_PRIMARY, 0);
+        lv_obj_set_style_text_font(ago_label, &lv_font_montserrat_20, 0);
+        lv_obj_center(ago_label);
+    }
+
     for (int i = 0; i < mempool_block_count; i++)
     {
         mempool_block_t *b = &mempool_blocks[i];
@@ -505,36 +806,47 @@ static void mempool_rebuild_cards(void)
         lv_obj_set_style_pad_all(card_wrap, 0, 0);
         lv_obj_clear_flag(card_wrap, LV_OBJ_FLAG_SCROLLABLE);
 
+        lv_obj_t *height_chip = NULL;
+        if (cyberpunk)
+        {
+            height_chip = lv_obj_create(card_wrap);
+            lv_obj_set_size(height_chip, 130, 32);
+            lv_obj_align(height_chip, LV_ALIGN_TOP_MID, 0, -2);
+            lv_obj_set_style_bg_color(height_chip, lv_color_black(), 0);
+            lv_obj_set_style_bg_opa(height_chip, LV_OPA_50, 0);
+            lv_obj_set_style_border_width(height_chip, 0, 0);
+            lv_obj_set_style_radius(height_chip, 16, 0);
+            lv_obj_set_style_pad_all(height_chip, 0, 0);
+            lv_obj_set_style_shadow_width(height_chip, 0, 0);
+            lv_obj_clear_flag(height_chip, LV_OBJ_FLAG_SCROLLABLE);
+        }
+
         char height_txt[16];
         lv_snprintf(height_txt, sizeof(height_txt), "%lld", b->height);
         lv_obj_t *height_label = lv_label_create(card_wrap);
         lv_label_set_text(height_label, height_txt);
-        lv_obj_set_style_text_color(height_label, color_height, 0);
+        lv_obj_set_style_text_color(height_label, cyberpunk ? COLOR_TEXT_PRIMARY : color_height, 0);
         lv_obj_set_style_text_font(height_label, &lv_font_montserrat_24, 0);
         lv_obj_align(height_label, LV_ALIGN_TOP_MID, 0, 0);
 
         lv_obj_t *card = lv_obj_create(card_wrap);
         lv_obj_set_size(card, CARD_W, card_h);
         lv_obj_align(card, LV_ALIGN_TOP_MID, 0, wrap_top_offset);
-        lv_obj_set_style_radius(card, 8, 0);
-        lv_obj_set_style_border_width(card, 0, 0);
-        lv_obj_set_style_pad_all(card, 0, 0);
+        lv_obj_set_style_radius(card, cyberpunk ? 20 : 8, 0);
         lv_obj_set_style_bg_color(card, color_card, 0);
-        lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_grad_color(card, color_card, 0);
+        lv_obj_set_style_bg_grad_dir(card, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_bg_opa(card, cyberpunk ? LV_OPA_50 : (space ? LV_OPA_70 : LV_OPA_COVER), 0);
+        lv_obj_set_style_border_width(card, (monochrome || space || cyberpunk) ? 2 : 0, 0);
+        lv_obj_set_style_border_color(card, (space || cyberpunk) ? COLOR_NAV_ICON : ui_theme_get_surface_outline_color(), 0);
+        lv_obj_set_style_border_opa(card, (monochrome || space || cyberpunk) ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_shadow_width(card, cyberpunk ? 0 : 12, 0);
+        lv_obj_set_style_shadow_color(card, lv_color_hex(0x02060D), 0);
+        lv_obj_set_style_shadow_opa(card, LV_OPA_30, 0);
+        lv_obj_set_style_shadow_ofs_y(card, 4, 0);
+        lv_obj_set_style_pad_all(card, 0, 0);
         lv_obj_set_style_clip_corner(card, true, 0);
         lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t *mid = lv_obj_create(card);
-        lv_obj_set_size(mid, CARD_W, card_h);
-        lv_obj_align(mid, LV_ALIGN_TOP_MID, 0, 0);
-        lv_obj_set_style_radius(mid, 8, 0);
-        lv_obj_set_style_bg_color(mid, color_mid, 0);
-        lv_obj_set_style_bg_grad_color(mid, color_bottom, 0);
-        lv_obj_set_style_bg_grad_dir(mid, LV_GRAD_DIR_VER, 0);
-        lv_obj_set_style_bg_opa(mid, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(mid, 0, 0);
-        lv_obj_set_style_pad_all(mid, 0, 0);
-        lv_obj_clear_flag(mid, LV_OBJ_FLAG_SCROLLABLE);
 
         const int bottom_bar_h = 52;
         int content_h = card_h - bottom_bar_h;
@@ -542,6 +854,19 @@ static void mempool_rebuild_cards(void)
         {
             content_h = 120;
         }
+
+        lv_obj_t *mid = lv_obj_create(card);
+        lv_obj_set_size(mid, CARD_W, content_h);
+        lv_obj_align(mid, LV_ALIGN_TOP_MID, 0, 0);
+        lv_obj_set_style_radius(mid, cyberpunk ? 20 : 8, 0);
+        lv_obj_set_style_bg_color(mid, color_mid, 0);
+        lv_obj_set_style_bg_grad_color(mid, (monochrome || space || cyberpunk) ? color_mid : lv_color_hex(0x143FBA), 0);
+        lv_obj_set_style_bg_grad_dir(mid, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_bg_opa(mid, (monochrome || space || cyberpunk) ? LV_OPA_TRANSP : LV_OPA_60, 0);
+        lv_obj_set_style_border_width(mid, 0, 0);
+        lv_obj_set_style_pad_all(mid, 0, 0);
+        lv_obj_clear_flag(mid, LV_OBJ_FLAG_SCROLLABLE);
+
         const int median_y = 10;
         const int range_y = median_y + 28;
         const int btc_y = range_y + 34;
@@ -591,9 +916,11 @@ static void mempool_rebuild_cards(void)
         lv_obj_t *bottom_bar = lv_obj_create(card);
         lv_obj_set_size(bottom_bar, CARD_W, bottom_bar_h);
         lv_obj_align(bottom_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
-        lv_obj_set_style_radius(bottom_bar, 0, 0);
+        lv_obj_set_style_radius(bottom_bar, cyberpunk ? 20 : 0, 0);
         lv_obj_set_style_bg_color(bottom_bar, color_bottom, 0);
-        lv_obj_set_style_bg_opa(bottom_bar, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_grad_color(bottom_bar, (monochrome || space || cyberpunk) ? color_bottom : lv_color_hex(0x6126D8), 0);
+        lv_obj_set_style_bg_grad_dir(bottom_bar, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_bg_opa(bottom_bar, cyberpunk ? LV_OPA_50 : (space ? LV_OPA_70 : LV_OPA_COVER), 0);
         lv_obj_set_style_border_width(bottom_bar, 0, 0);
         lv_obj_set_style_pad_all(bottom_bar, 0, 0);
         lv_obj_clear_flag(bottom_bar, LV_OBJ_FLAG_SCROLLABLE);
@@ -615,11 +942,26 @@ static void mempool_rebuild_cards(void)
 
         if (b->pool_name[0] != '\0')
         {
+            lv_obj_t *pool_chip = NULL;
+            if (cyberpunk)
+            {
+                pool_chip = lv_obj_create(card_wrap);
+                lv_obj_set_size(pool_chip, CARD_W, 24);
+                lv_obj_align(pool_chip, LV_ALIGN_BOTTOM_MID, 0, -wrap_bottom_pad);
+                lv_obj_set_style_bg_color(pool_chip, lv_color_black(), 0);
+                lv_obj_set_style_bg_opa(pool_chip, LV_OPA_50, 0);
+                lv_obj_set_style_border_width(pool_chip, 0, 0);
+                lv_obj_set_style_radius(pool_chip, 12, 0);
+                lv_obj_set_style_pad_all(pool_chip, 0, 0);
+                lv_obj_set_style_shadow_width(pool_chip, 0, 0);
+                lv_obj_clear_flag(pool_chip, LV_OBJ_FLAG_SCROLLABLE);
+            }
+
             lv_obj_t *pool_label = lv_label_create(card_wrap);
             lv_label_set_text(pool_label, b->pool_name);
             lv_label_set_long_mode(pool_label, LV_LABEL_LONG_DOT);
             lv_obj_set_width(pool_label, CARD_W);
-            lv_obj_set_style_text_color(pool_label, COLOR_TEXT_PRIMARY, 0);
+            lv_obj_set_style_text_color(pool_label, cyberpunk ? COLOR_TEXT_PRIMARY : COLOR_TEXT_PRIMARY, 0);
             lv_obj_set_style_text_font(pool_label, &lv_font_montserrat_14, 0);
             lv_obj_set_style_text_align(pool_label, LV_TEXT_ALIGN_CENTER, 0);
             lv_obj_align(pool_label, LV_ALIGN_BOTTOM_MID, 0, -wrap_bottom_pad);
@@ -861,17 +1203,17 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
 {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_size(btn, 56, 46);
-    lv_obj_set_style_bg_color(btn, active ? COLOR_ACCENT : COLOR_CARD_BG, 0);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(btn, active ? 0 : 2, 0);
-    lv_obj_set_style_border_color(btn, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_opa(btn, active ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_bg_opa(btn, active ? LV_OPA_20 : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(btn, 2, 0);
+    lv_obj_set_style_border_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_border_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_color(label, active ? COLOR_TEXT_ON_ACCENT : COLOR_ACCENT, 0);
+    lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
     lv_obj_center(label);
 
@@ -887,17 +1229,17 @@ static lv_obj_t *create_bottom_nav_btn_img(lv_obj_t *parent, const lv_img_dsc_t 
 {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_size(btn, 56, 46);
-    lv_obj_set_style_bg_color(btn, active ? COLOR_ACCENT : COLOR_CARD_BG, 0);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(btn, active ? 0 : 2, 0);
-    lv_obj_set_style_border_color(btn, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_opa(btn, active ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_bg_opa(btn, active ? LV_OPA_20 : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(btn, 2, 0);
+    lv_obj_set_style_border_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_border_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
     lv_obj_t *img = lv_img_create(btn);
     lv_img_set_src(img, img_dsc);
-    lv_obj_set_style_img_recolor(img, active ? COLOR_TEXT_ON_ACCENT : COLOR_ACCENT, 0);
+    lv_obj_set_style_img_recolor(img, COLOR_NAV_ICON, 0);
     lv_obj_set_style_img_recolor_opa(img, LV_OPA_COVER, 0);
     lv_obj_center(img);
 
@@ -938,6 +1280,14 @@ void mempool_price_clicked(lv_event_t *e)
     LV_UNUSED(e);
     price_screen_create();
     lv_scr_load(price_get_screen());
+    mempool_screen_destroy();
+}
+
+void mempool_weather_clicked(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    weather_screen_create();
+    lv_scr_load(weather_get_screen());
     mempool_screen_destroy();
 }
 

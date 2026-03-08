@@ -11,6 +11,7 @@ void mempool_home_clicked(lv_event_t *e);
 void mempool_block_clicked(lv_event_t *e);
 void mempool_clock_clicked(lv_event_t *e);
 void mempool_price_clicked(lv_event_t *e);
+void mempool_weather_clicked(lv_event_t *e);
 void mempool_wifi_clicked(lv_event_t *e);
 void mempool_settings_clicked(lv_event_t *e);
 void mempool_night_clicked(lv_event_t *e);

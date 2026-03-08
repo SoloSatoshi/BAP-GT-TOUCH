@@ -11,6 +11,7 @@ void block_update_height(const char *height);
 void block_home_clicked(lv_event_t *e);
 void block_clock_clicked(lv_event_t *e);
 void block_price_clicked(lv_event_t *e);
+void block_weather_clicked(lv_event_t *e);
 void block_mempool_clicked(lv_event_t *e);
 void block_wifi_clicked(lv_event_t *e);
 void block_settings_clicked(lv_event_t *e);

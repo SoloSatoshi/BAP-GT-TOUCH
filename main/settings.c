@@ -5,13 +5,18 @@
 #include "block.h"
 #include "clock.h"
 #include "price.h"
+#include "weather.h"
 #include "mempool.h"
+#include "background.h"
+#include "theme.h"
+#include "keyboard_theme.h"
 #include "stdio.h"
 #include "string.h"
 #include "custom_fonts.h"
 #include "bap.h"
 #include "waveshare_rgb_lcd_port.h"
 #include "ota_update.h"
+#include <ctype.h>
 #include <stdlib.h>
 #include <time.h>
 #include "nvs_flash.h"
@@ -29,6 +34,15 @@ static lv_obj_t *fan_value_label = NULL;
 static lv_obj_t *fan_save_btn = NULL;
 static lv_obj_t *brightness_slider = NULL;
 static lv_obj_t *brightness_value_label = NULL;
+static lv_obj_t *screen_off_btn = NULL;
+static lv_obj_t *currency_dropdown = NULL;
+static lv_obj_t *theme_dropdown = NULL;
+static lv_obj_t *weather_unit_dropdown = NULL;
+static lv_obj_t *weather_country_ta = NULL;
+static lv_obj_t *weather_postal_ta = NULL;
+static lv_obj_t *weather_save_btn = NULL;
+static lv_obj_t *weather_status_label = NULL;
+static lv_obj_t *settings_keyboard = NULL;
 static lv_obj_t *timezone_dropdown = NULL;
 static lv_obj_t *sys_overlay = NULL;
 static int diag_counter = 0;
@@ -44,10 +58,17 @@ static settings_info_t current_settings = {
     .performance_mode = PERFORMANCE_MEDIUM,
     .auto_fan_control = true,
     .fan_speed_percent = 50,
-    .brightness_percent = 100};
+    .brightness_percent = 100,
+    .price_currency = PRICE_CURRENCY_USD};
 
 static int current_timezone_index = 0;
 static bool timezone_applied = false;
+static bool settings_nvs_ready = false;
+static bool weather_location_loaded = false;
+static bool weather_temperature_unit_loaded = false;
+static char current_weather_country_code[3] = "US";
+static char current_weather_postal_code[20] = "";
+static weather_temperature_unit_t current_weather_temperature_unit = WEATHER_TEMPERATURE_UNIT_F;
 
 static const char *timezone_options =
     "UTC\n"
@@ -74,6 +95,64 @@ static const char *timezone_values[] = {
 
 #define SETTINGS_NVS_NAMESPACE "settings"
 #define SETTINGS_NVS_TZ_INDEX_KEY "tz_index"
+#define SETTINGS_NVS_CURRENCY_KEY "price_currency"
+#define SETTINGS_NVS_WEATHER_COUNTRY_KEY "weather_country"
+#define SETTINGS_NVS_WEATHER_POSTAL_KEY "weather_postal"
+#define SETTINGS_NVS_WEATHER_TEMP_UNIT_KEY "weather_temp_unit"
+
+static const char *currency_options =
+    "USD\n"
+    "EUR\n"
+    "GBP\n"
+    "CAD\n"
+    "AUD\n"
+    "JPY";
+
+static const char *currency_codes[] = {
+    "USD",
+    "EUR",
+    "GBP",
+    "CAD",
+    "AUD",
+    "JPY",
+};
+
+static const char *currency_prefixes[] = {
+    "$",
+    "",
+    "",
+    "$",
+    "$",
+    "",
+};
+
+static const char *currency_suffixes[] = {
+    "",
+    " EUR",
+    " GBP",
+    " CAD",
+    " AUD",
+    " JPY",
+};
+
+static const char *weather_temperature_unit_options =
+    "F\n"
+    "C";
+
+static bool settings_ensure_nvs_ready(void);
+static void settings_load_price_currency(void);
+static void settings_save_price_currency(price_currency_t currency);
+static void settings_load_weather_location(void);
+static void settings_save_weather_location(void);
+static void settings_load_weather_temperature_unit(void);
+static void settings_save_weather_temperature_unit(weather_temperature_unit_t unit);
+static void settings_weather_set_status(const char *text, lv_color_t color);
+static lv_obj_t *create_settings_input_field(lv_obj_t *parent, const char *placeholder, const char *accepted_chars, uint32_t max_len);
+static void settings_ta_event_handler(lv_event_t *e);
+static void settings_keyboard_event_cb(lv_event_t *e);
+static void settings_theme_changed(lv_event_t *e);
+static void settings_reload_screen_async(void *data);
+static void settings_screen_off_clicked(lv_event_t *e);
 
 static lv_obj_t *create_settings_button(lv_obj_t *parent, const char *text, lv_event_cb_t event_cb, bool active)
 {
@@ -108,17 +187,17 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
 {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_size(btn, 56, 46);
-    lv_obj_set_style_bg_color(btn, active ? COLOR_ACCENT : COLOR_CARD_BG, 0);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(btn, active ? 0 : 2, 0);
-    lv_obj_set_style_border_color(btn, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_opa(btn, active ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_bg_opa(btn, active ? LV_OPA_20 : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(btn, 2, 0);
+    lv_obj_set_style_border_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_border_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_color(label, active ? COLOR_TEXT_ON_ACCENT : COLOR_ACCENT, 0);
+    lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
     lv_obj_center(label);
 
@@ -134,17 +213,17 @@ static lv_obj_t *create_bottom_nav_btn_img(lv_obj_t *parent, const lv_img_dsc_t 
 {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_size(btn, 56, 46);
-    lv_obj_set_style_bg_color(btn, active ? COLOR_ACCENT : COLOR_CARD_BG, 0);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(btn, active ? 0 : 2, 0);
-    lv_obj_set_style_border_color(btn, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_opa(btn, active ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_bg_opa(btn, active ? LV_OPA_20 : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(btn, 2, 0);
+    lv_obj_set_style_border_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_border_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
     lv_obj_t *img = lv_img_create(btn);
     lv_img_set_src(img, img_dsc);
-    lv_obj_set_style_img_recolor(img, active ? COLOR_TEXT_ON_ACCENT : COLOR_ACCENT, 0);
+    lv_obj_set_style_img_recolor(img, COLOR_NAV_ICON, 0);
     lv_obj_set_style_img_recolor_opa(img, LV_OPA_COVER, 0);
     lv_obj_center(img);
 
@@ -218,20 +297,9 @@ static void apply_timezone_by_index(int index)
 
 static void settings_load_timezone(void)
 {
-    static bool nvs_ready = false;
-    if (!nvs_ready)
+    if (!settings_ensure_nvs_ready())
     {
-        esp_err_t init_err = nvs_flash_init();
-        if (init_err == ESP_ERR_NVS_NO_FREE_PAGES || init_err == ESP_ERR_NVS_NEW_VERSION_FOUND)
-        {
-            nvs_flash_erase();
-            init_err = nvs_flash_init();
-        }
-        if (init_err != ESP_OK)
-        {
-            return;
-        }
-        nvs_ready = true;
+        return;
     }
 
     nvs_handle_t handle;
@@ -252,20 +320,9 @@ static void settings_load_timezone(void)
 
 static void settings_save_timezone(int index)
 {
-    static bool nvs_ready = false;
-    if (!nvs_ready)
+    if (!settings_ensure_nvs_ready())
     {
-        esp_err_t init_err = nvs_flash_init();
-        if (init_err == ESP_ERR_NVS_NO_FREE_PAGES || init_err == ESP_ERR_NVS_NEW_VERSION_FOUND)
-        {
-            nvs_flash_erase();
-            init_err = nvs_flash_init();
-        }
-        if (init_err != ESP_OK)
-        {
-            return;
-        }
-        nvs_ready = true;
+        return;
     }
 
     nvs_handle_t handle;
@@ -278,6 +335,258 @@ static void settings_save_timezone(int index)
     nvs_set_i32(handle, SETTINGS_NVS_TZ_INDEX_KEY, index);
     nvs_commit(handle);
     nvs_close(handle);
+}
+
+static bool settings_ensure_nvs_ready(void)
+{
+    if (settings_nvs_ready)
+    {
+        return true;
+    }
+
+    esp_err_t init_err = nvs_flash_init();
+    if (init_err == ESP_ERR_NVS_NO_FREE_PAGES || init_err == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
+        nvs_flash_erase();
+        init_err = nvs_flash_init();
+    }
+    if (init_err != ESP_OK)
+    {
+        return false;
+    }
+
+    settings_nvs_ready = true;
+    return true;
+}
+
+static void settings_load_price_currency(void)
+{
+    if (!settings_ensure_nvs_ready())
+    {
+        return;
+    }
+
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(SETTINGS_NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (err != ESP_OK)
+    {
+        return;
+    }
+
+    int32_t saved_currency = PRICE_CURRENCY_USD;
+    err = nvs_get_i32(handle, SETTINGS_NVS_CURRENCY_KEY, &saved_currency);
+    nvs_close(handle);
+    if (err == ESP_OK &&
+        saved_currency >= PRICE_CURRENCY_USD &&
+        saved_currency <= PRICE_CURRENCY_JPY)
+    {
+        current_settings.price_currency = (price_currency_t)saved_currency;
+    }
+}
+
+static void settings_save_price_currency(price_currency_t currency)
+{
+    if (!settings_ensure_nvs_ready())
+    {
+        return;
+    }
+
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(SETTINGS_NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (err != ESP_OK)
+    {
+        return;
+    }
+
+    nvs_set_i32(handle, SETTINGS_NVS_CURRENCY_KEY, (int32_t)currency);
+    nvs_commit(handle);
+    nvs_close(handle);
+}
+
+static void settings_load_weather_location(void)
+{
+    if (!settings_ensure_nvs_ready())
+    {
+        return;
+    }
+
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(SETTINGS_NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (err != ESP_OK)
+    {
+        return;
+    }
+
+    size_t country_len = sizeof(current_weather_country_code);
+    err = nvs_get_str(handle, SETTINGS_NVS_WEATHER_COUNTRY_KEY, current_weather_country_code, &country_len);
+    if (err != ESP_OK || current_weather_country_code[0] == '\0')
+    {
+        strncpy(current_weather_country_code, "US", sizeof(current_weather_country_code) - 1);
+        current_weather_country_code[sizeof(current_weather_country_code) - 1] = '\0';
+    }
+
+    size_t postal_len = sizeof(current_weather_postal_code);
+    err = nvs_get_str(handle, SETTINGS_NVS_WEATHER_POSTAL_KEY, current_weather_postal_code, &postal_len);
+    if (err != ESP_OK)
+    {
+        current_weather_postal_code[0] = '\0';
+    }
+
+    nvs_close(handle);
+    weather_location_loaded = true;
+}
+
+static void settings_load_weather_temperature_unit(void)
+{
+    if (!settings_ensure_nvs_ready())
+    {
+        return;
+    }
+
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(SETTINGS_NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (err != ESP_OK)
+    {
+        return;
+    }
+
+    int32_t saved_unit = WEATHER_TEMPERATURE_UNIT_F;
+    err = nvs_get_i32(handle, SETTINGS_NVS_WEATHER_TEMP_UNIT_KEY, &saved_unit);
+    nvs_close(handle);
+
+    if (err == ESP_OK &&
+        saved_unit >= WEATHER_TEMPERATURE_UNIT_F &&
+        saved_unit <= WEATHER_TEMPERATURE_UNIT_C)
+    {
+        current_weather_temperature_unit = (weather_temperature_unit_t)saved_unit;
+    }
+
+    weather_temperature_unit_loaded = true;
+}
+
+static void settings_save_weather_temperature_unit(weather_temperature_unit_t unit)
+{
+    if (!settings_ensure_nvs_ready())
+    {
+        return;
+    }
+
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(SETTINGS_NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (err != ESP_OK)
+    {
+        return;
+    }
+
+    nvs_set_i32(handle, SETTINGS_NVS_WEATHER_TEMP_UNIT_KEY, (int32_t)unit);
+    nvs_commit(handle);
+    nvs_close(handle);
+    weather_temperature_unit_loaded = true;
+}
+
+static void settings_save_weather_location(void)
+{
+    if (!settings_ensure_nvs_ready())
+    {
+        return;
+    }
+
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(SETTINGS_NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (err != ESP_OK)
+    {
+        return;
+    }
+
+    nvs_set_str(handle, SETTINGS_NVS_WEATHER_COUNTRY_KEY, current_weather_country_code);
+    nvs_set_str(handle, SETTINGS_NVS_WEATHER_POSTAL_KEY, current_weather_postal_code);
+    nvs_commit(handle);
+    nvs_close(handle);
+}
+
+static void settings_weather_set_status(const char *text, lv_color_t color)
+{
+    if (!weather_status_label || !text)
+    {
+        return;
+    }
+
+    lv_label_set_text(weather_status_label, text);
+    lv_obj_set_style_text_color(weather_status_label, color, 0);
+}
+
+static lv_obj_t *create_settings_input_field(lv_obj_t *parent, const char *placeholder, const char *accepted_chars, uint32_t max_len)
+{
+    lv_obj_t *ta = lv_textarea_create(parent);
+    lv_obj_set_size(ta, 180, 40);
+    lv_textarea_set_placeholder_text(ta, placeholder);
+    lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_max_length(ta, max_len);
+    if (accepted_chars)
+    {
+        lv_textarea_set_accepted_chars(ta, accepted_chars);
+    }
+    translucent_card_apply(ta, 8, LV_OPA_20);
+    lv_obj_set_style_border_width(ta, 2, 0);
+    lv_obj_set_style_border_color(ta, COLOR_RED, 0);
+    lv_obj_set_style_border_opa(ta, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_color(ta, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(ta, &lv_font_montserrat_16, 0);
+    lv_obj_add_event_cb(ta, settings_ta_event_handler, LV_EVENT_ALL, NULL);
+    return ta;
+}
+
+static void settings_ta_event_handler(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_obj_t *ta = lv_event_get_target(e);
+
+    if (code == LV_EVENT_FOCUSED)
+    {
+        if (settings_keyboard && lv_obj_has_flag(settings_keyboard, LV_OBJ_FLAG_HIDDEN))
+        {
+            lv_keyboard_set_textarea(settings_keyboard, ta);
+            lv_obj_clear_flag(settings_keyboard, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(settings_keyboard);
+        }
+    }
+    else if (code == LV_EVENT_DEFOCUSED)
+    {
+        if (settings_keyboard && !lv_obj_has_flag(settings_keyboard, LV_OBJ_FLAG_HIDDEN))
+        {
+            lv_obj_add_flag(settings_keyboard, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
+static void settings_keyboard_event_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_obj_t *kb = lv_event_get_target(e);
+
+    if (code == LV_EVENT_READY || code == LV_EVENT_CANCEL)
+    {
+        lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_t *ta = lv_keyboard_get_textarea(kb);
+        if (ta)
+        {
+            lv_obj_clear_state(ta, LV_STATE_FOCUSED);
+        }
+    }
+}
+
+static void settings_reload_screen_async(void *data)
+{
+    LV_UNUSED(data);
+
+    if (!settings_screen)
+    {
+        return;
+    }
+
+    settings_screen_destroy();
+    settings_screen_create();
+    lv_scr_load(settings_get_screen());
 }
 
 static void update_fan_controls(void)
@@ -344,12 +653,9 @@ static void create_system_overlay(void)
     lv_obj_t *dialog = lv_obj_create(sys_overlay);
     lv_obj_set_size(dialog, 400, 200);
     lv_obj_center(dialog);
-    lv_obj_set_style_bg_color(dialog, COLOR_CARD_BG, 0);
-    lv_obj_set_style_bg_opa(dialog, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(dialog, 2, 0);
-    lv_obj_set_style_border_color(dialog, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_opa(dialog, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(dialog, 14, 0);
+    translucent_card_apply(dialog, 14, LV_OPA_20);
+    lv_obj_set_style_border_width(dialog, 0, 0);
+    lv_obj_set_style_border_opa(dialog, LV_OPA_TRANSP, 0);
     lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
 
     char display_buffer[64];
@@ -471,6 +777,10 @@ void settings_screen_create(void)
     }
 
     settings_load_timezone();
+    settings_load_price_currency();
+    settings_load_weather_location();
+    settings_load_weather_temperature_unit();
+    ui_theme_init();
 
     settings_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(settings_screen, COLOR_BACKGROUND, 0);
@@ -481,14 +791,13 @@ void settings_screen_create(void)
     lv_obj_t *main_cont = lv_obj_create(settings_screen);
     lv_obj_set_size(main_cont, SCREEN_WIDTH - 60, SCREEN_HEIGHT - 100);
     lv_obj_align(main_cont, LV_ALIGN_TOP_MID, 0, 16);
-    lv_obj_set_style_bg_color(main_cont, COLOR_CARD_BG, 0);
+    translucent_card_apply(main_cont, 14, LV_OPA_20);
     lv_obj_set_style_bg_opa(main_cont, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(main_cont, 1, 0);
-    lv_obj_set_style_border_color(main_cont, COLOR_BORDER, 0);
-    lv_obj_set_style_border_opa(main_cont, LV_OPA_50, 0);
-    lv_obj_set_style_radius(main_cont, 14, 0);
+    lv_obj_set_style_border_width(main_cont, 0, 0);
+    lv_obj_set_style_border_opa(main_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(main_cont, 16, 0);
     lv_obj_add_flag(main_cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(main_cont, LV_OBJ_FLAG_SCROLL_ELASTIC);
     lv_obj_set_scrollbar_mode(main_cont, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_scroll_dir(main_cont, LV_DIR_VER);
     lv_obj_set_style_pad_bottom(main_cont, 80, 0);
@@ -529,9 +838,45 @@ void settings_screen_create(void)
     performance_high_btn = create_settings_button(perf_btn_cont, "HIGH", settings_performance_high_clicked,
                                                   current_settings.performance_mode == PERFORMANCE_HIGH);
 
+    lv_obj_t *brightness_section = lv_obj_create(main_cont);
+    lv_obj_set_size(brightness_section, 680, 70);
+    lv_obj_align(brightness_section, LV_ALIGN_TOP_MID, 0, 160);
+    lv_obj_set_style_bg_opa(brightness_section, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(brightness_section, 0, 0);
+    lv_obj_set_style_pad_all(brightness_section, 10, 0);
+    lv_obj_clear_flag(brightness_section, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *brightness_title = lv_label_create(brightness_section);
+    lv_label_set_text(brightness_title, "Screen Brightness:");
+    lv_obj_set_style_text_color(brightness_title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(brightness_title, &lv_font_montserrat_18, 0);
+    lv_obj_align(brightness_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    brightness_slider = lv_slider_create(brightness_section);
+    lv_obj_set_size(brightness_slider, 400, 20);
+    lv_obj_align(brightness_slider, LV_ALIGN_TOP_LEFT, 0, 30);
+    lv_slider_set_range(brightness_slider, 5, 100);
+    lv_slider_set_value(brightness_slider, current_settings.brightness_percent, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(brightness_slider, COLOR_CARD_BG, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(brightness_slider, COLOR_ACCENT, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(brightness_slider, COLOR_ACCENT, LV_PART_KNOB);
+    lv_obj_add_event_cb(brightness_slider, settings_brightness_slider_changed, LV_EVENT_VALUE_CHANGED, NULL);
+
+    brightness_value_label = lv_label_create(brightness_section);
+    char brightness_text[16];
+    snprintf(brightness_text, sizeof(brightness_text), "%d%%", current_settings.brightness_percent);
+    lv_label_set_text(brightness_value_label, brightness_text);
+    lv_obj_set_style_text_color(brightness_value_label, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(brightness_value_label, &lv_font_montserrat_22, 0);
+    lv_obj_align(brightness_value_label, LV_ALIGN_TOP_LEFT, 445, 26);
+
+    screen_off_btn = create_settings_button(brightness_section, "SCREEN OFF", settings_screen_off_clicked, false);
+    lv_obj_set_size(screen_off_btn, 150, 40);
+    lv_obj_align(screen_off_btn, LV_ALIGN_TOP_LEFT, 520, 18);
+
     lv_obj_t *fan_section = lv_obj_create(main_cont);
     lv_obj_set_size(fan_section, 680, 200);
-    lv_obj_align(fan_section, LV_ALIGN_TOP_MID, 0, 160);
+    lv_obj_align(fan_section, LV_ALIGN_TOP_MID, 0, 240);
     lv_obj_set_style_bg_opa(fan_section, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(fan_section, 0, 0);
     lv_obj_set_style_pad_all(fan_section, 10, 0);
@@ -579,41 +924,141 @@ void settings_screen_create(void)
 
     update_fan_controls();
 
-    lv_obj_t *brightness_section = lv_obj_create(main_cont);
-    lv_obj_set_size(brightness_section, 680, 70);
-    lv_obj_align(brightness_section, LV_ALIGN_TOP_MID, 0, 350);
-    lv_obj_set_style_bg_opa(brightness_section, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(brightness_section, 0, 0);
-    lv_obj_set_style_pad_all(brightness_section, 10, 0);
-    lv_obj_clear_flag(brightness_section, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *currency_section = lv_obj_create(main_cont);
+    lv_obj_set_size(currency_section, 680, 50);
+    lv_obj_align(currency_section, LV_ALIGN_TOP_MID, 0, 510);
+    lv_obj_set_style_bg_opa(currency_section, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(currency_section, 0, 0);
+    lv_obj_set_style_pad_all(currency_section, 10, 0);
+    lv_obj_clear_flag(currency_section, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *brightness_title = lv_label_create(brightness_section);
-    lv_label_set_text(brightness_title, "Screen Brightness:");
-    lv_obj_set_style_text_color(brightness_title, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_set_style_text_font(brightness_title, &lv_font_montserrat_18, 0);
-    lv_obj_align(brightness_title, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_t *currency_title = lv_label_create(currency_section);
+    lv_label_set_text(currency_title, "Price Currency:");
+    lv_obj_set_style_text_color(currency_title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(currency_title, &lv_font_montserrat_18, 0);
+    lv_obj_align(currency_title, LV_ALIGN_TOP_LEFT, 0, 0);
 
-    brightness_slider = lv_slider_create(brightness_section);
-    lv_obj_set_size(brightness_slider, 550, 20);
-    lv_obj_align(brightness_slider, LV_ALIGN_TOP_LEFT, 0, 30);
-    lv_slider_set_range(brightness_slider, 5, 100);
-    lv_slider_set_value(brightness_slider, current_settings.brightness_percent, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(brightness_slider, COLOR_CARD_BG, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(brightness_slider, COLOR_ACCENT, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(brightness_slider, COLOR_ACCENT, LV_PART_KNOB);
-    lv_obj_add_event_cb(brightness_slider, settings_brightness_slider_changed, LV_EVENT_VALUE_CHANGED, NULL);
+    currency_dropdown = lv_dropdown_create(currency_section);
+    lv_obj_set_size(currency_dropdown, 300, 34);
+    lv_obj_align(currency_dropdown, LV_ALIGN_TOP_LEFT, 170, -4);
+    lv_dropdown_set_options(currency_dropdown, currency_options);
+    lv_dropdown_set_selected(currency_dropdown, current_settings.price_currency);
+    translucent_card_apply(currency_dropdown, 8, LV_OPA_20);
+    lv_obj_set_style_border_width(currency_dropdown, 2, 0);
+    lv_obj_set_style_border_color(currency_dropdown, COLOR_RED, 0);
+    lv_obj_set_style_border_opa(currency_dropdown, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_color(currency_dropdown, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(currency_dropdown, &lv_font_montserrat_16, 0);
+    lv_obj_add_event_cb(currency_dropdown, settings_price_currency_changed, LV_EVENT_VALUE_CHANGED, NULL);
 
-    brightness_value_label = lv_label_create(brightness_section);
-    char brightness_text[16];
-    snprintf(brightness_text, sizeof(brightness_text), "%d%%", current_settings.brightness_percent);
-    lv_label_set_text(brightness_value_label, brightness_text);
-    lv_obj_set_style_text_color(brightness_value_label, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_set_style_text_font(brightness_value_label, &lv_font_montserrat_22, 0);
-    lv_obj_align(brightness_value_label, LV_ALIGN_TOP_LEFT, 600, 26);
+    lv_obj_t *theme_section = lv_obj_create(main_cont);
+    lv_obj_set_size(theme_section, 680, 50);
+    lv_obj_align(theme_section, LV_ALIGN_TOP_MID, 0, 570);
+    lv_obj_set_style_bg_opa(theme_section, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(theme_section, 0, 0);
+    lv_obj_set_style_pad_all(theme_section, 10, 0);
+    lv_obj_clear_flag(theme_section, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *theme_title = lv_label_create(theme_section);
+    lv_label_set_text(theme_title, "Theme:");
+    lv_obj_set_style_text_color(theme_title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(theme_title, &lv_font_montserrat_18, 0);
+    lv_obj_align(theme_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    theme_dropdown = lv_dropdown_create(theme_section);
+    lv_obj_set_size(theme_dropdown, 300, 34);
+    lv_obj_align(theme_dropdown, LV_ALIGN_TOP_LEFT, 170, -4);
+    lv_dropdown_set_options(theme_dropdown, ui_theme_get_options());
+    lv_dropdown_set_selected(theme_dropdown, (uint16_t)ui_theme_get_current());
+    translucent_card_apply(theme_dropdown, 8, LV_OPA_20);
+    lv_obj_set_style_border_width(theme_dropdown, 2, 0);
+    lv_obj_set_style_border_color(theme_dropdown, COLOR_RED, 0);
+    lv_obj_set_style_border_opa(theme_dropdown, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_color(theme_dropdown, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(theme_dropdown, &lv_font_montserrat_16, 0);
+    lv_obj_add_event_cb(theme_dropdown, settings_theme_changed, LV_EVENT_VALUE_CHANGED, NULL);
+
+    lv_obj_t *weather_section = lv_obj_create(main_cont);
+    lv_obj_set_size(weather_section, 680, 182);
+    lv_obj_align(weather_section, LV_ALIGN_TOP_MID, 0, 630);
+    lv_obj_set_style_bg_opa(weather_section, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(weather_section, 0, 0);
+    lv_obj_set_style_pad_all(weather_section, 10, 0);
+    lv_obj_clear_flag(weather_section, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *weather_title = lv_label_create(weather_section);
+    lv_label_set_text(weather_title, "Weather Location:");
+    lv_obj_set_style_text_color(weather_title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(weather_title, &lv_font_montserrat_18, 0);
+    lv_obj_align(weather_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lv_obj_t *weather_hint = lv_label_create(weather_section);
+    lv_label_set_text(weather_hint, "Use 2-letter country code and postal code");
+    lv_obj_set_style_text_color(weather_hint, COLOR_TEXT_SECONDARY, 0);
+    lv_obj_set_style_text_font(weather_hint, &lv_font_montserrat_14, 0);
+    lv_obj_align(weather_hint, LV_ALIGN_TOP_LEFT, 0, 24);
+
+    lv_obj_t *country_title = lv_label_create(weather_section);
+    lv_label_set_text(country_title, "Country");
+    lv_obj_set_style_text_color(country_title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(country_title, &lv_font_montserrat_14, 0);
+    lv_obj_align(country_title, LV_ALIGN_TOP_LEFT, 0, 52);
+
+    weather_country_ta = create_settings_input_field(weather_section, "US", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 2);
+    lv_obj_align(weather_country_ta, LV_ALIGN_TOP_LEFT, 0, 74);
+    lv_textarea_set_text(weather_country_ta, current_weather_country_code);
+
+    lv_obj_t *postal_title = lv_label_create(weather_section);
+    lv_label_set_text(postal_title, "Postal Code");
+    lv_obj_set_style_text_color(postal_title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(postal_title, &lv_font_montserrat_14, 0);
+    lv_obj_align(postal_title, LV_ALIGN_TOP_LEFT, 220, 52);
+
+    weather_postal_ta = create_settings_input_field(weather_section, "10001 or SW1A 1AA", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789- ", 16);
+    lv_obj_set_size(weather_postal_ta, 220, 40);
+    lv_obj_align(weather_postal_ta, LV_ALIGN_TOP_LEFT, 220, 74);
+    lv_textarea_set_text(weather_postal_ta, current_weather_postal_code);
+
+    weather_save_btn = create_settings_button(weather_section, "SAVE LOCATION", settings_weather_location_save_clicked, false);
+    lv_obj_set_size(weather_save_btn, 180, 40);
+    lv_obj_align(weather_save_btn, LV_ALIGN_TOP_LEFT, 470, 74);
+
+    lv_obj_t *weather_unit_title = lv_label_create(weather_section);
+    lv_label_set_text(weather_unit_title, "Temp Unit:");
+    lv_obj_set_style_text_color(weather_unit_title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(weather_unit_title, &lv_font_montserrat_16, 0);
+    lv_obj_align(weather_unit_title, LV_ALIGN_TOP_LEFT, 0, 140);
+
+    weather_unit_dropdown = lv_dropdown_create(weather_section);
+    lv_obj_set_size(weather_unit_dropdown, 100, 34);
+    lv_obj_align(weather_unit_dropdown, LV_ALIGN_TOP_LEFT, 120, 134);
+    lv_dropdown_set_options(weather_unit_dropdown, weather_temperature_unit_options);
+    lv_dropdown_set_selected(weather_unit_dropdown, current_weather_temperature_unit);
+    translucent_card_apply(weather_unit_dropdown, 8, LV_OPA_20);
+    lv_obj_set_style_border_width(weather_unit_dropdown, 2, 0);
+    lv_obj_set_style_border_color(weather_unit_dropdown, COLOR_RED, 0);
+    lv_obj_set_style_border_opa(weather_unit_dropdown, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_color(weather_unit_dropdown, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(weather_unit_dropdown, &lv_font_montserrat_16, 0);
+    lv_obj_add_event_cb(weather_unit_dropdown, settings_weather_temperature_unit_changed, LV_EVENT_VALUE_CHANGED, NULL);
+
+    weather_status_label = lv_label_create(weather_section);
+    lv_obj_set_style_text_color(weather_status_label, COLOR_TEXT_SECONDARY, 0);
+    lv_obj_set_style_text_font(weather_status_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(weather_status_label, LV_ALIGN_TOP_LEFT, 250, 142);
+
+    if (current_weather_postal_code[0] != '\0')
+    {
+        settings_weather_set_status("Saved weather location ready", COLOR_TEXT_SECONDARY);
+    }
+    else
+    {
+        settings_weather_set_status("Enter country + postal code, then save", COLOR_TEXT_SECONDARY);
+    }
 
     lv_obj_t *timezone_section = lv_obj_create(main_cont);
     lv_obj_set_size(timezone_section, 680, 50);
-    lv_obj_align(timezone_section, LV_ALIGN_TOP_MID, 0, 430);
+    lv_obj_align(timezone_section, LV_ALIGN_TOP_MID, 0, 830);
     lv_obj_set_style_bg_opa(timezone_section, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(timezone_section, 0, 0);
     lv_obj_set_style_pad_all(timezone_section, 10, 0);
@@ -630,12 +1075,10 @@ void settings_screen_create(void)
     lv_obj_align(timezone_dropdown, LV_ALIGN_TOP_LEFT, 140, -4);
     lv_dropdown_set_options(timezone_dropdown, timezone_options);
     lv_dropdown_set_selected(timezone_dropdown, current_timezone_index);
-    lv_obj_set_style_bg_color(timezone_dropdown, COLOR_CARD_BG, 0);
-    lv_obj_set_style_bg_opa(timezone_dropdown, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(timezone_dropdown, 1, 0);
-    lv_obj_set_style_border_color(timezone_dropdown, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_opa(timezone_dropdown, LV_OPA_50, 0);
-    lv_obj_set_style_radius(timezone_dropdown, 8, 0);
+    translucent_card_apply(timezone_dropdown, 8, LV_OPA_20);
+    lv_obj_set_style_border_width(timezone_dropdown, 2, 0);
+    lv_obj_set_style_border_color(timezone_dropdown, COLOR_RED, 0);
+    lv_obj_set_style_border_opa(timezone_dropdown, LV_OPA_COVER, 0);
     lv_obj_set_style_text_color(timezone_dropdown, COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_font(timezone_dropdown, &lv_font_montserrat_16, 0);
     lv_obj_add_event_cb(timezone_dropdown, settings_timezone_changed, LV_EVENT_VALUE_CHANGED, NULL);
@@ -648,7 +1091,7 @@ void settings_screen_create(void)
     // OTA Update Section
     lv_obj_t *ota_section = lv_obj_create(main_cont);
     lv_obj_set_size(ota_section, 680, 160);
-    lv_obj_align(ota_section, LV_ALIGN_TOP_MID, 0, 490);
+    lv_obj_align(ota_section, LV_ALIGN_TOP_MID, 0, 890);
     lv_obj_set_style_bg_opa(ota_section, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(ota_section, 0, 0);
     lv_obj_set_style_pad_all(ota_section, 10, 0);
@@ -708,9 +1151,15 @@ void settings_screen_create(void)
     create_bottom_nav_btn_img(bottom_nav, &cubes_solid_full, settings_mempool_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &clock_solid_full, settings_clock_clicked, false);
     create_bottom_nav_btn(bottom_nav, "$", settings_price_clicked, false);
+    create_bottom_nav_btn(bottom_nav, "W", settings_weather_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, settings_wifi_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, settings_diagnostics_handler, true);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_EYE_OPEN, settings_night_clicked, false);
+
+    settings_keyboard = lv_keyboard_create(settings_screen);
+    keyboard_theme_apply(settings_keyboard);
+    lv_obj_add_flag(settings_keyboard, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(settings_keyboard, settings_keyboard_event_cb, LV_EVENT_ALL, NULL);
 }
 
 void settings_screen_destroy(void)
@@ -741,6 +1190,15 @@ void settings_screen_destroy(void)
         fan_save_btn = NULL;
         brightness_slider = NULL;
         brightness_value_label = NULL;
+        screen_off_btn = NULL;
+        currency_dropdown = NULL;
+        theme_dropdown = NULL;
+        weather_unit_dropdown = NULL;
+        weather_country_ta = NULL;
+        weather_postal_ta = NULL;
+        weather_save_btn = NULL;
+        weather_status_label = NULL;
+        settings_keyboard = NULL;
         timezone_dropdown = NULL;
         ota_update_btn = NULL;
         ota_status_label = NULL;
@@ -886,6 +1344,14 @@ void settings_price_clicked(lv_event_t *e)
     settings_screen_destroy();
 }
 
+void settings_weather_clicked(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    weather_screen_create();
+    lv_scr_load(weather_get_screen());
+    settings_screen_destroy();
+}
+
 void settings_block_clicked(lv_event_t *e)
 {
     block_screen_create();
@@ -918,12 +1384,134 @@ void settings_brightness_slider_changed(lv_event_t *e)
     printf("Screen brightness set to: %d%%\n", current_settings.brightness_percent);
 }
 
+static void settings_screen_off_clicked(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    lcd_screen_turn_off();
+}
+
 void settings_timezone_changed(lv_event_t *e)
 {
     lv_obj_t *dropdown = lv_event_get_target(e);
     current_timezone_index = (int)lv_dropdown_get_selected(dropdown);
     apply_timezone_by_index(current_timezone_index);
     settings_save_timezone(current_timezone_index);
+}
+
+void settings_price_currency_changed(lv_event_t *e)
+{
+    lv_obj_t *dropdown = lv_event_get_target(e);
+    current_settings.price_currency = (price_currency_t)lv_dropdown_get_selected(dropdown);
+    settings_save_price_currency(current_settings.price_currency);
+    printf("Price currency set to: %s\n", settings_get_price_currency_code());
+}
+
+void settings_weather_temperature_unit_changed(lv_event_t *e)
+{
+    lv_obj_t *dropdown = lv_event_get_target(e);
+    current_weather_temperature_unit = (weather_temperature_unit_t)lv_dropdown_get_selected(dropdown);
+    settings_save_weather_temperature_unit(current_weather_temperature_unit);
+    weather_service_start();
+    weather_service_request_refresh();
+}
+
+static void settings_theme_changed(lv_event_t *e)
+{
+    lv_obj_t *dropdown = lv_event_get_target(e);
+    ui_theme_t selected_theme = (ui_theme_t)lv_dropdown_get_selected(dropdown);
+    ui_theme_t current_theme = ui_theme_get_current();
+
+    if (selected_theme == current_theme)
+    {
+        return;
+    }
+
+    ui_theme_set_current(selected_theme);
+    ui_theme_save_current();
+    lv_async_call(settings_reload_screen_async, NULL);
+}
+
+void settings_weather_location_save_clicked(lv_event_t *e)
+{
+    LV_UNUSED(e);
+
+    if (!weather_country_ta || !weather_postal_ta)
+    {
+        return;
+    }
+
+    const char *country_text = lv_textarea_get_text(weather_country_ta);
+    const char *postal_text = lv_textarea_get_text(weather_postal_ta);
+
+    if (!country_text || strlen(country_text) != 2 || !postal_text || postal_text[0] == '\0')
+    {
+        settings_weather_set_status("Use 2-letter country code and postal code", COLOR_RED);
+        return;
+    }
+
+    memset(current_weather_country_code, 0, sizeof(current_weather_country_code));
+    for (size_t i = 0; i < sizeof(current_weather_country_code) - 1 && country_text[i] != '\0'; i++)
+    {
+        current_weather_country_code[i] = (char)toupper((unsigned char)country_text[i]);
+    }
+
+    strncpy(current_weather_postal_code, postal_text, sizeof(current_weather_postal_code) - 1);
+    current_weather_postal_code[sizeof(current_weather_postal_code) - 1] = '\0';
+
+    settings_save_weather_location();
+    weather_location_loaded = true;
+    lv_textarea_set_text(weather_country_ta, current_weather_country_code);
+    lv_textarea_set_text(weather_postal_ta, current_weather_postal_code);
+    weather_service_start();
+    weather_service_request_refresh();
+    settings_weather_set_status("Weather location saved, fetching now", COLOR_ACCENT);
+}
+
+price_currency_t settings_get_price_currency(void)
+{
+    return current_settings.price_currency;
+}
+
+const char *settings_get_price_currency_code(void)
+{
+    return currency_codes[current_settings.price_currency];
+}
+
+const char *settings_get_price_currency_prefix(void)
+{
+    return currency_prefixes[current_settings.price_currency];
+}
+
+const char *settings_get_price_currency_suffix(void)
+{
+    return currency_suffixes[current_settings.price_currency];
+}
+
+const char *settings_get_weather_country_code(void)
+{
+    if (!weather_location_loaded)
+    {
+        settings_load_weather_location();
+    }
+    return current_weather_country_code;
+}
+
+const char *settings_get_weather_postal_code(void)
+{
+    if (!weather_location_loaded)
+    {
+        settings_load_weather_location();
+    }
+    return current_weather_postal_code;
+}
+
+weather_temperature_unit_t settings_get_weather_temperature_unit(void)
+{
+    if (!weather_temperature_unit_loaded)
+    {
+        settings_load_weather_temperature_unit();
+    }
+    return current_weather_temperature_unit;
 }
 
 void settings_night_clicked(lv_event_t *e)

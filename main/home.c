@@ -5,7 +5,9 @@
 #include "block.h"
 #include "clock.h"
 #include "price.h"
+#include "weather.h"
 #include "mempool.h"
+#include "background.h"
 #include "stdio.h"
 #include "string.h"
 #include "custom_fonts.h"
@@ -99,12 +101,10 @@ static void create_hardware_popup(void)
     lv_obj_t *popup_cont = lv_obj_create(hardware_popup);
     lv_obj_set_size(popup_cont, 500, 350);
     lv_obj_center(popup_cont);
-    lv_obj_set_style_bg_color(popup_cont, COLOR_CARD_BG, 0);
+    translucent_card_apply(popup_cont, 12, LV_OPA_20);
+    lv_obj_set_style_bg_color(popup_cont, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_grad_color(popup_cont, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(popup_cont, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(popup_cont, 2, 0);
-    lv_obj_set_style_border_color(popup_cont, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_opa(popup_cont, LV_OPA_70, 0);
-    lv_obj_set_style_radius(popup_cont, 12, 0);
     lv_obj_set_style_pad_all(popup_cont, 24, 0);
     lv_obj_add_flag(popup_cont, LV_OBJ_FLAG_CLICKABLE);
 
@@ -186,12 +186,10 @@ static void create_pool_popup(void)
     lv_obj_t *popup_cont = lv_obj_create(pool_popup);
     lv_obj_set_size(popup_cont, 680, 360);
     lv_obj_center(popup_cont);
-    lv_obj_set_style_bg_color(popup_cont, COLOR_CARD_BG, 0);
+    translucent_card_apply(popup_cont, 12, LV_OPA_20);
+    lv_obj_set_style_bg_color(popup_cont, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_grad_color(popup_cont, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(popup_cont, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(popup_cont, 2, 0);
-    lv_obj_set_style_border_color(popup_cont, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_opa(popup_cont, LV_OPA_70, 0);
-    lv_obj_set_style_radius(popup_cont, 12, 0);
     lv_obj_set_style_pad_all(popup_cont, 24, 0);
     lv_obj_add_flag(popup_cont, LV_OBJ_FLAG_CLICKABLE);
 
@@ -292,11 +290,7 @@ static void create_pool_popup(void)
         lv_obj_t *qr_empty = lv_obj_create(qr_cont);
         lv_obj_set_size(qr_empty, 150, 150);
         lv_obj_align(qr_empty, LV_ALIGN_TOP_MID, 0, 64);
-        lv_obj_set_style_bg_color(qr_empty, COLOR_BORDER, 0);
-        lv_obj_set_style_bg_opa(qr_empty, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(qr_empty, 2, 0);
-        lv_obj_set_style_border_color(qr_empty, COLOR_ACCENT, 0);
-        lv_obj_set_style_radius(qr_empty, 12, 0);
+        translucent_card_apply(qr_empty, 12, LV_OPA_20);
         lv_obj_clear_flag(qr_empty, LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t *empty_label = lv_label_create(qr_empty);
@@ -361,17 +355,17 @@ static lv_obj_t *create_bottom_nav_btn(lv_obj_t *parent, const char *symbol, lv_
 {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_size(btn, 56, 46);
-    lv_obj_set_style_bg_color(btn, active ? COLOR_ACCENT : COLOR_CARD_BG, 0);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(btn, active ? 0 : 2, 0);
-    lv_obj_set_style_border_color(btn, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_opa(btn, active ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_bg_opa(btn, active ? LV_OPA_20 : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(btn, 2, 0);
+    lv_obj_set_style_border_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_border_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_color(label, active ? COLOR_TEXT_ON_ACCENT : COLOR_ACCENT, 0);
+    lv_obj_set_style_text_color(label, COLOR_NAV_ICON, 0);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0);
     lv_obj_center(label);
 
@@ -387,17 +381,17 @@ static lv_obj_t *create_bottom_nav_btn_img(lv_obj_t *parent, const lv_img_dsc_t 
 {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_size(btn, 56, 46);
-    lv_obj_set_style_bg_color(btn, active ? COLOR_ACCENT : COLOR_CARD_BG, 0);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(btn, active ? 0 : 2, 0);
-    lv_obj_set_style_border_color(btn, COLOR_ACCENT, 0);
-    lv_obj_set_style_border_opa(btn, active ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_bg_opa(btn, active ? LV_OPA_20 : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(btn, 2, 0);
+    lv_obj_set_style_border_color(btn, COLOR_NAV_ICON, 0);
+    lv_obj_set_style_border_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
     lv_obj_t *img = lv_img_create(btn);
     lv_img_set_src(img, img_dsc);
-    lv_obj_set_style_img_recolor(img, active ? COLOR_TEXT_ON_ACCENT : COLOR_ACCENT, 0);
+    lv_obj_set_style_img_recolor(img, COLOR_NAV_ICON, 0);
     lv_obj_set_style_img_recolor_opa(img, LV_OPA_COVER, 0);
     lv_obj_center(img);
 
@@ -419,23 +413,18 @@ void home_screen_create(void)
     home_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(home_screen, COLOR_BACKGROUND, 0);
     lv_obj_set_style_bg_opa(home_screen, LV_OPA_COVER, 0);
+    screen_background_apply(home_screen);
     lv_obj_clear_flag(home_screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(home_screen, LV_SCROLLBAR_MODE_OFF);
 
     lv_obj_t *main_cont = lv_obj_create(home_screen);
     lv_obj_set_size(main_cont, SCREEN_WIDTH - 60, SCREEN_HEIGHT - 100);
     lv_obj_align(main_cont, LV_ALIGN_TOP_MID, 0, 16);
-    lv_obj_set_style_bg_color(main_cont, COLOR_CARD_BG, 0);
-    lv_obj_set_style_bg_opa(main_cont, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_grad_color(main_cont, COLOR_CARD_BG, 0);
-    lv_obj_set_style_bg_grad_dir(main_cont, LV_GRAD_DIR_NONE, 0);
-    lv_obj_set_style_border_width(main_cont, 1, 0);
-    lv_obj_set_style_border_color(main_cont, COLOR_BACKGROUND, 0);
-    lv_obj_set_style_border_opa(main_cont, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(main_cont, 14, 0);
+    translucent_card_apply(main_cont, 14, LV_OPA_20);
+    lv_obj_set_style_bg_opa(main_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(main_cont, 0, 0);
+    lv_obj_set_style_border_opa(main_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(main_cont, 16, 0);
-    lv_obj_set_style_shadow_width(main_cont, 0, 0);
-    lv_obj_set_style_shadow_opa(main_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_outline_width(main_cont, 0, 0);
     lv_obj_set_style_outline_opa(main_cont, LV_OPA_TRANSP, 0);
     lv_obj_clear_flag(main_cont, LV_OBJ_FLAG_SCROLLABLE);
@@ -614,6 +603,7 @@ void home_screen_create(void)
     create_bottom_nav_btn_img(bottom_nav, &cubes_solid_full, home_mempool_clicked, false);
     create_bottom_nav_btn_img(bottom_nav, &clock_solid_full, home_clock_clicked, false);
     create_bottom_nav_btn(bottom_nav, "$", home_price_clicked, false);
+    create_bottom_nav_btn(bottom_nav, "W", home_weather_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_WIFI, home_wifi_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_SETTINGS, home_settings_clicked, false);
     create_bottom_nav_btn(bottom_nav, LV_SYMBOL_EYE_OPEN, home_night_clicked, false);
@@ -706,6 +696,13 @@ void home_price_clicked(lv_event_t *e)
 {
     price_screen_create();
     lv_scr_load(price_get_screen());
+    home_screen_destroy();
+}
+
+void home_weather_clicked(lv_event_t *e)
+{
+    weather_screen_create();
+    lv_scr_load(weather_get_screen());
     home_screen_destroy();
 }
 

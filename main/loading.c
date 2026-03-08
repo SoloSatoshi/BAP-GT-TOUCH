@@ -9,6 +9,7 @@
  *********************/
 #include "loading.h"
 #include "home.h"
+#include "background.h"
 #include "custom_fonts.h"
 #include "assets/logo_background.c"
 #include "esp_log.h"
@@ -49,6 +50,8 @@ void loading(void)
 {
     screen = lv_scr_act();
     lv_obj_set_style_bg_color(screen, COLOR_BACKGROUND, 0);
+    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+    screen_background_apply(screen);
 
     // Create a title label
     lv_obj_t *title = lv_label_create(screen);
