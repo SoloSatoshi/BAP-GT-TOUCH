@@ -187,13 +187,5 @@ static void finish_loading(void)
 
 static bool loading_should_boot_to_wifi(void)
 {
-    wifi_config_t wifi_config = {0};
-    esp_err_t ret = esp_wifi_get_config(WIFI_IF_STA, &wifi_config);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGW(TAG, "Unable to read saved WiFi config at boot: %s", esp_err_to_name(ret));
-        return false;
-    }
-
-    return wifi_config.sta.ssid[0] == '\0';
+    return !wifi_has_saved_credentials();
 }

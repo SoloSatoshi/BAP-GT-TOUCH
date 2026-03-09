@@ -249,6 +249,24 @@ bool bap_client_is_connected(void) {
     return (current_time - last_response_time) < pdMS_TO_TICKS(30000);
 }
 
+bool bap_client_has_recent_response(uint32_t timeout_ms) {
+    if (last_response_time == 0) {
+        return false;
+    }
+
+    uint32_t current_time = xTaskGetTickCount();
+    return (current_time - last_response_time) < pdMS_TO_TICKS(timeout_ms);
+}
+
+uint32_t bap_client_get_ms_since_last_response(void) {
+    if (last_response_time == 0) {
+        return UINT32_MAX;
+    }
+
+    uint32_t current_time = xTaskGetTickCount();
+    return (uint32_t)pdTICKS_TO_MS(current_time - last_response_time);
+}
+
 void bap_client_reset_connection_state(void) {
     ESP_LOGI(TAG, "Resetting BAP connection state");
     subscriptions_sent = false;

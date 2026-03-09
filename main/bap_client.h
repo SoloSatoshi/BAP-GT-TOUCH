@@ -6,6 +6,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 #include "esp_err.h"
 
 #ifdef __cplusplus
@@ -81,6 +82,8 @@ esp_err_t bap_client_send_password(const char *password);
  * @return true if connected (recent response received), false otherwise
  */
 bool bap_client_is_connected(void);
+bool bap_client_has_recent_response(uint32_t timeout_ms);
+uint32_t bap_client_get_ms_since_last_response(void);
 
 /**
  * @brief Reset connection state

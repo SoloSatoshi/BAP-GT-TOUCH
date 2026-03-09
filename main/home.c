@@ -273,8 +273,8 @@ static void create_pool_popup(void)
     lv_obj_set_style_text_font(qr_hint, &lv_font_montserrat_12, 0);
     lv_obj_align(qr_hint, LV_ALIGN_TOP_MID, 0, 28);
 
-    const char *ip = wifi_get_current_ip();
-    bool ip_available = ip && ip[0] != '\0' && strcmp(ip, "0.0.0.0") != 0;
+    const char *ip = wifi_get_bitaxe_ip();
+    bool ip_available = wifi_bitaxe_is_connected();
 
     if (ip_available) {
         char qr_url[96];
@@ -302,13 +302,19 @@ static void create_pool_popup(void)
         lv_obj_clear_flag(qr_empty, LV_OBJ_FLAG_SCROLLABLE);
 
         lv_obj_t *empty_label = lv_label_create(qr_empty);
-        lv_label_set_text(empty_label, "No IP Yet");
+        lv_label_set_text(empty_label, "No Bitaxe IP");
         lv_obj_set_style_text_color(empty_label, COLOR_TEXT_PRIMARY, 0);
         lv_obj_set_style_text_font(empty_label, &lv_font_montserrat_16, 0);
         lv_obj_center(empty_label);
 
         lv_obj_t *url_label = lv_label_create(qr_cont);
-        lv_label_set_text(url_label, "Connect Wi-Fi first to generate the setup QR");
+        if (!wifi_is_connected()) {
+            lv_label_set_text(url_label, "Connect the touchscreen to Wi-Fi first.");
+        } else if (wifi_bitaxe_is_reconnecting()) {
+            lv_label_set_text(url_label, "Bitaxe is reconnecting after reboot or flash.");
+        } else {
+            lv_label_set_text(url_label, "Bitaxe has not reported a Wi-Fi IP yet.");
+        }
         lv_label_set_long_mode(url_label, LV_LABEL_LONG_WRAP);
         lv_obj_set_width(url_label, 250);
         lv_obj_set_style_text_align(url_label, LV_TEXT_ALIGN_CENTER, 0);
