@@ -53,6 +53,8 @@ void home_update_best_difficulty(const char* bd);
 
 // Pool data functions
 void home_update_pool_info(const pool_info_t* pool_info);
+void home_refresh_pool_popup(void);
+void home_arm_pool_popup_for_default_user(void);
 
 // Event handlers
 void home_hardware_clicked(lv_event_t * e);

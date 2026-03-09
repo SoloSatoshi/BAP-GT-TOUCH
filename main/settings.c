@@ -18,6 +18,9 @@
 #include "bap.h"
 #include "waveshare_rgb_lcd_port.h"
 #include "ota_update.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <ctype.h>
 #include <stdlib.h>
 #include <time.h>
@@ -48,7 +51,13 @@ static lv_obj_t *weather_status_label = NULL;
 static lv_obj_t *settings_keyboard = NULL;
 static lv_obj_t *timezone_dropdown = NULL;
 static lv_obj_t *sys_overlay = NULL;
+static lv_obj_t *factory_reset_btn = NULL;
+static lv_obj_t *factory_reset_overlay = NULL;
+static lv_obj_t *factory_reset_message_label = NULL;
+static lv_obj_t *factory_reset_cancel_btn = NULL;
+static lv_obj_t *factory_reset_confirm_btn = NULL;
 static int diag_counter = 0;
+static bool factory_reset_in_progress = false;
 
 // OTA Update UI elements
 static lv_obj_t *ota_update_btn = NULL;
@@ -159,6 +168,14 @@ static void settings_keyboard_event_cb(lv_event_t *e);
 static void settings_theme_changed(lv_event_t *e);
 static void settings_reload_screen_async(void *data);
 static void settings_screen_off_clicked(lv_event_t *e);
+static void settings_factory_reset_clicked(lv_event_t *e);
+static void settings_factory_reset_cancel_clicked(lv_event_t *e);
+static void settings_factory_reset_confirm_clicked(lv_event_t *e);
+static void settings_factory_reset_overlay_clicked(lv_event_t *e);
+static void settings_factory_reset_close_popup(void);
+static void settings_factory_reset_show_popup(void);
+static void settings_factory_reset_show_progress(void);
+static void settings_factory_reset_task(void *pvParameters);
 
 #define SETTINGS_SECTION_WIDTH 680
 #define SETTINGS_SECTION_GAP 14
@@ -773,6 +790,203 @@ static void create_system_overlay(void)
     lv_obj_center(label);
 }
 
+static void settings_factory_reset_close_popup(void)
+{
+    if (factory_reset_overlay) {
+        lv_obj_del(factory_reset_overlay);
+        factory_reset_overlay = NULL;
+    }
+
+    factory_reset_message_label = NULL;
+    factory_reset_cancel_btn = NULL;
+    factory_reset_confirm_btn = NULL;
+}
+
+static void settings_factory_reset_overlay_clicked(lv_event_t *e)
+{
+    LV_UNUSED(e);
+
+    if (factory_reset_in_progress) {
+        return;
+    }
+
+    settings_factory_reset_close_popup();
+}
+
+static void settings_factory_reset_cancel_clicked(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    settings_factory_reset_close_popup();
+}
+
+static void settings_factory_reset_show_progress(void)
+{
+    settings_factory_reset_close_popup();
+
+    factory_reset_overlay = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(factory_reset_overlay, SCREEN_WIDTH, SCREEN_HEIGHT);
+    lv_obj_set_pos(factory_reset_overlay, 0, 0);
+    lv_obj_set_style_bg_color(factory_reset_overlay, COLOR_BACKGROUND, 0);
+    lv_obj_set_style_bg_opa(factory_reset_overlay, LV_OPA_80, 0);
+    lv_obj_set_style_border_width(factory_reset_overlay, 0, 0);
+    lv_obj_clear_flag(factory_reset_overlay, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *dialog = lv_obj_create(factory_reset_overlay);
+    lv_obj_set_size(dialog, 460, 220);
+    lv_obj_center(dialog);
+    translucent_card_apply(dialog, 14, (lv_opa_t)24);
+    lv_obj_set_style_border_width(dialog, 2, 0);
+    lv_obj_set_style_border_color(dialog, COLOR_RED, 0);
+    lv_obj_set_style_border_opa(dialog, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title = lv_label_create(dialog);
+    lv_label_set_text(title, "FACTORY RESETTING");
+    lv_obj_set_style_text_color(title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 24);
+
+    factory_reset_message_label = lv_label_create(dialog);
+    lv_label_set_text(factory_reset_message_label,
+                      "Clearing touchscreen settings and\n"
+                      "resetting the Bitaxe.\n"
+                      "The device will restart.");
+    lv_label_set_long_mode(factory_reset_message_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(factory_reset_message_label, 380);
+    lv_obj_set_style_text_align(factory_reset_message_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(factory_reset_message_label, COLOR_TEXT_SECONDARY, 0);
+    lv_obj_set_style_text_font(factory_reset_message_label, &lv_font_montserrat_16, 0);
+    lv_obj_align(factory_reset_message_label, LV_ALIGN_TOP_MID, 0, 72);
+}
+
+static void settings_factory_reset_task(void *pvParameters)
+{
+    LV_UNUSED(pvParameters);
+
+    vTaskDelay(pdMS_TO_TICKS(400));
+
+    nvs_flash_deinit();
+    nvs_flash_erase();
+    settings_nvs_ready = false;
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+    esp_restart();
+}
+
+static void settings_factory_reset_confirm_clicked(lv_event_t *e)
+{
+    LV_UNUSED(e);
+
+    if (factory_reset_in_progress) {
+        return;
+    }
+
+    esp_err_t ret = BAP_send_setting("factory_reset", "1");
+    if (ret != ESP_OK) {
+        if (factory_reset_message_label) {
+            lv_label_set_text(factory_reset_message_label,
+                              "Unable to reach the Bitaxe right now.\n"
+                              "Try again once both sides are connected.");
+        }
+        return;
+    }
+
+    factory_reset_in_progress = true;
+    settings_factory_reset_show_progress();
+
+    if (xTaskCreate(settings_factory_reset_task, "settings_factory_reset", 4096, NULL, 5, NULL) != pdPASS) {
+        factory_reset_in_progress = false;
+        if (factory_reset_message_label) {
+            lv_label_set_text(factory_reset_message_label,
+                              "Reset could not start.\n"
+                              "Restart the device and try again.");
+        }
+    }
+}
+
+static void settings_factory_reset_show_popup(void)
+{
+    if (factory_reset_overlay) {
+        return;
+    }
+
+    if (settings_keyboard && !lv_obj_has_flag(settings_keyboard, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_add_flag(settings_keyboard, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    factory_reset_overlay = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(factory_reset_overlay, SCREEN_WIDTH, SCREEN_HEIGHT);
+    lv_obj_set_pos(factory_reset_overlay, 0, 0);
+    lv_obj_set_style_bg_color(factory_reset_overlay, COLOR_BACKGROUND, 0);
+    lv_obj_set_style_bg_opa(factory_reset_overlay, LV_OPA_80, 0);
+    lv_obj_set_style_border_width(factory_reset_overlay, 0, 0);
+    lv_obj_clear_flag(factory_reset_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(factory_reset_overlay, settings_factory_reset_overlay_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *dialog = lv_obj_create(factory_reset_overlay);
+    lv_obj_set_size(dialog, 500, 260);
+    lv_obj_center(dialog);
+    translucent_card_apply(dialog, 14, (lv_opa_t)24);
+    lv_obj_set_style_border_width(dialog, 2, 0);
+    lv_obj_set_style_border_color(dialog, COLOR_RED, 0);
+    lv_obj_set_style_border_opa(dialog, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title = lv_label_create(dialog);
+    lv_label_set_text(title, "FACTORY RESET DEVICE?");
+    lv_obj_set_style_text_color(title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 22);
+
+    factory_reset_message_label = lv_label_create(dialog);
+    lv_label_set_text(factory_reset_message_label,
+                      "This clears touchscreen Wi-Fi and settings,\n"
+                      "and resets Bitaxe network, pool, fan, and theme settings.\n"
+                      "Board config and miner tuning are preserved.");
+    lv_label_set_long_mode(factory_reset_message_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(factory_reset_message_label, 420);
+    lv_obj_set_style_text_align(factory_reset_message_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(factory_reset_message_label, COLOR_TEXT_SECONDARY, 0);
+    lv_obj_set_style_text_font(factory_reset_message_label, &lv_font_montserrat_16, 0);
+    lv_obj_align(factory_reset_message_label, LV_ALIGN_TOP_MID, 0, 72);
+
+    factory_reset_cancel_btn = lv_btn_create(dialog);
+    lv_obj_set_size(factory_reset_cancel_btn, 160, 44);
+    lv_obj_align(factory_reset_cancel_btn, LV_ALIGN_BOTTOM_LEFT, 44, -24);
+    lv_obj_set_style_bg_color(factory_reset_cancel_btn, COLOR_CARD_BG, 0);
+    lv_obj_set_style_border_width(factory_reset_cancel_btn, 2, 0);
+    lv_obj_set_style_border_color(factory_reset_cancel_btn, COLOR_TEXT_SECONDARY, 0);
+    lv_obj_set_style_border_opa(factory_reset_cancel_btn, LV_OPA_COVER, 0);
+    lv_obj_add_event_cb(factory_reset_cancel_btn, settings_factory_reset_cancel_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *cancel_label = lv_label_create(factory_reset_cancel_btn);
+    lv_label_set_text(cancel_label, "CANCEL");
+    lv_obj_set_style_text_color(cancel_label, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(cancel_label, &lv_font_montserrat_16, 0);
+    lv_obj_center(cancel_label);
+
+    factory_reset_confirm_btn = lv_btn_create(dialog);
+    lv_obj_set_size(factory_reset_confirm_btn, 200, 44);
+    lv_obj_align(factory_reset_confirm_btn, LV_ALIGN_BOTTOM_RIGHT, -44, -24);
+    lv_obj_set_style_bg_color(factory_reset_confirm_btn, COLOR_CARD_BG, 0);
+    lv_obj_set_style_border_width(factory_reset_confirm_btn, 2, 0);
+    lv_obj_set_style_border_color(factory_reset_confirm_btn, COLOR_RED, 0);
+    lv_obj_set_style_border_opa(factory_reset_confirm_btn, LV_OPA_COVER, 0);
+    lv_obj_add_event_cb(factory_reset_confirm_btn, settings_factory_reset_confirm_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *confirm_label = lv_label_create(factory_reset_confirm_btn);
+    lv_label_set_text(confirm_label, "FACTORY RESET");
+    lv_obj_set_style_text_color(confirm_label, COLOR_RED, 0);
+    lv_obj_set_style_text_font(confirm_label, &lv_font_montserrat_16, 0);
+    lv_obj_center(confirm_label);
+}
+
+static void settings_factory_reset_clicked(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    settings_factory_reset_show_popup();
+}
+
 static void settings_diagnostics_handler(lv_event_t *e)
 {
     diag_counter++;
@@ -1238,6 +1452,38 @@ void settings_screen_create(void)
 
     // Create OTA update timer (500ms interval)
     ota_timer = lv_timer_create(ota_update_timer_cb, 500, NULL);
+    section_y += 160 + SETTINGS_SECTION_GAP;
+
+    lv_obj_t *factory_reset_section = lv_obj_create(settings_main_cont);
+    lv_obj_set_size(factory_reset_section, SETTINGS_SECTION_WIDTH, 116);
+    lv_obj_align(factory_reset_section, LV_ALIGN_TOP_MID, 0, section_y);
+    lv_obj_set_style_bg_opa(factory_reset_section, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(factory_reset_section, 0, 0);
+    lv_obj_set_style_pad_all(factory_reset_section, 10, 0);
+    lv_obj_clear_flag(factory_reset_section, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *factory_reset_title = lv_label_create(factory_reset_section);
+    lv_label_set_text(factory_reset_title, "Factory Reset:");
+    lv_obj_set_style_text_color(factory_reset_title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(factory_reset_title, &lv_font_montserrat_18, 0);
+    lv_obj_align(factory_reset_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lv_obj_t *factory_reset_hint = lv_label_create(factory_reset_section);
+    lv_label_set_text(factory_reset_hint, "Clears touchscreen setup plus Bitaxe network, pool, fan, and theme settings.");
+    lv_obj_set_style_text_color(factory_reset_hint, COLOR_TEXT_SECONDARY, 0);
+    lv_obj_set_style_text_font(factory_reset_hint, &lv_font_montserrat_14, 0);
+    lv_obj_align(factory_reset_hint, LV_ALIGN_TOP_LEFT, 0, 26);
+
+    factory_reset_btn = create_settings_button(factory_reset_section, "FACTORY RESET DEVICE", settings_factory_reset_clicked, false);
+    lv_obj_set_size(factory_reset_btn, 250, 40);
+    lv_obj_align(factory_reset_btn, LV_ALIGN_TOP_LEFT, 0, 62);
+    lv_obj_set_style_border_color(factory_reset_btn, COLOR_RED, 0);
+    lv_obj_set_style_bg_color(factory_reset_btn, COLOR_CARD_BG, 0);
+
+    lv_obj_t *factory_reset_btn_label = lv_obj_get_child(factory_reset_btn, 0);
+    if (factory_reset_btn_label) {
+        lv_obj_set_style_text_color(factory_reset_btn_label, COLOR_RED, 0);
+    }
 
     lv_obj_t *bottom_nav = lv_obj_create(settings_screen);
     lv_obj_set_size(bottom_nav, SCREEN_WIDTH, 64);
@@ -1280,7 +1526,9 @@ void settings_screen_destroy(void)
         lv_obj_del(sys_overlay);
         sys_overlay = NULL;
     }
+    settings_factory_reset_close_popup();
     diag_counter = 0;
+    factory_reset_in_progress = false;
 
     // Clean up OTA timer
     if (ota_timer) {
@@ -1312,6 +1560,7 @@ void settings_screen_destroy(void)
         weather_status_label = NULL;
         settings_keyboard = NULL;
         timezone_dropdown = NULL;
+        factory_reset_btn = NULL;
         ota_update_btn = NULL;
         ota_status_label = NULL;
         ota_progress_bar = NULL;

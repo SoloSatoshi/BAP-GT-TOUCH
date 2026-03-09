@@ -24,12 +24,23 @@ static lv_obj_t *home_screen = NULL;
 static lv_obj_t *hashrate_label = NULL;
 static lv_obj_t *hardware_popup = NULL;
 static lv_obj_t *pool_popup = NULL;
+static lv_obj_t *pool_url_label = NULL;
+static lv_obj_t *pool_port_label = NULL;
+static lv_obj_t *pool_user_label = NULL;
+static lv_obj_t *pool_qr = NULL;
+static lv_obj_t *pool_qr_empty = NULL;
+static lv_obj_t *pool_qr_status_label = NULL;
+static lv_obj_t *pool_qr_route_label = NULL;
 static lv_obj_t *power_label = NULL;
 static lv_obj_t *temperature_label = NULL;
 static lv_obj_t *efficiency_label = NULL;
 static lv_obj_t *fan_label = NULL;
 static lv_obj_t *shares_label = NULL;
 static lv_obj_t *bd_label = NULL;
+static bool pool_popup_armed_for_default_user = false;
+
+static const char *FACTORY_DEFAULT_POOL_USER =
+    "bc1qnp980s5fpp8l94p5cvttmtdqy8rvrq74qly2yrfmzkdsntqzlc5qkc4rkq.bitaxe";
 
 static float current_power_watts = 0.0f;
 static float current_hashrate_ghs = 0.0f;
@@ -52,8 +63,16 @@ static pool_info_t current_pool_info = {
     .worker_name = "bitaxe_001"};
 
 static void hardware_popup_close_clicked(lv_event_t *e);
+static void create_pool_popup(void);
 static void pool_popup_close_clicked(lv_event_t *e);
+static void pool_popup_overlay_clicked(lv_event_t *e);
 static void apply_cached_home_values(void);
+static void clear_pool_popup_refs(void);
+static void destroy_pool_popup(void);
+static void refresh_pool_popup_content(void);
+static bool pool_user_is_meaningful(const char *worker_name);
+static bool pool_user_is_factory_default(const char *worker_name);
+static void maybe_show_armed_pool_popup(void);
 
 static lv_obj_t *create_nav_button(lv_obj_t *parent, const char *text, lv_event_cb_t event_cb)
 {
@@ -171,10 +190,131 @@ static void hardware_popup_close_clicked(lv_event_t *e)
     }
 }
 
+static void clear_pool_popup_refs(void)
+{
+    pool_popup = NULL;
+    pool_url_label = NULL;
+    pool_port_label = NULL;
+    pool_user_label = NULL;
+    pool_qr = NULL;
+    pool_qr_empty = NULL;
+    pool_qr_status_label = NULL;
+    pool_qr_route_label = NULL;
+}
+
+static void destroy_pool_popup(void)
+{
+    if (pool_popup)
+    {
+        lv_obj_del(pool_popup);
+    }
+    clear_pool_popup_refs();
+}
+
+static void refresh_pool_popup_content(void)
+{
+    if (pool_url_label)
+    {
+        lv_label_set_text_fmt(pool_url_label, "URL: %s", current_pool_info.url);
+    }
+    if (pool_port_label)
+    {
+        lv_label_set_text_fmt(pool_port_label, "Port: %s", current_pool_info.port);
+    }
+    if (pool_user_label)
+    {
+        lv_label_set_text_fmt(pool_user_label, "User: %s", current_pool_info.worker_name);
+    }
+
+    if (!pool_qr || !pool_qr_empty || !pool_qr_status_label || !pool_qr_route_label)
+    {
+        return;
+    }
+
+    const char *ip = wifi_get_bitaxe_ip();
+    bool ip_available = wifi_bitaxe_is_connected();
+
+    if (ip_available)
+    {
+        char qr_url[96];
+        char route_label[96];
+
+        snprintf(qr_url, sizeof(qr_url), "http://%s/#/pool", ip);
+        snprintf(route_label, sizeof(route_label), "%s/#/pool", ip);
+
+        lv_qrcode_update(pool_qr, qr_url, strlen(qr_url));
+        lv_obj_clear_flag(pool_qr, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(pool_qr_empty, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(pool_qr_status_label, LV_OBJ_FLAG_HIDDEN);
+
+        lv_label_set_text(pool_qr_route_label, route_label);
+        lv_obj_set_style_text_color(pool_qr_route_label, lv_color_hex(0x39FF14), 0);
+        lv_obj_set_style_text_font(pool_qr_route_label, &lv_font_montserrat_18, 0);
+    }
+    else
+    {
+        lv_obj_add_flag(pool_qr, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(pool_qr_empty, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(pool_qr_status_label, LV_OBJ_FLAG_HIDDEN);
+
+        if (!wifi_is_connected())
+        {
+            lv_label_set_text(pool_qr_status_label, "Connect the touchscreen to Wi-Fi first.");
+        }
+        else if (wifi_bitaxe_is_reconnecting())
+        {
+            lv_label_set_text(pool_qr_status_label, "Bitaxe is reconnecting after reboot or flash.");
+        }
+        else
+        {
+            lv_label_set_text(pool_qr_status_label, "Waiting for Bitaxe IP...");
+        }
+
+        lv_label_set_text(pool_qr_route_label, "Bitaxe IP unavailable");
+        lv_obj_set_style_text_color(pool_qr_route_label, COLOR_TEXT_SECONDARY, 0);
+        lv_obj_set_style_text_font(pool_qr_route_label, &lv_font_montserrat_14, 0);
+    }
+}
+
+static bool pool_user_is_meaningful(const char *worker_name)
+{
+    return worker_name &&
+           worker_name[0] != '\0' &&
+           strcmp(worker_name, "loading...") != 0 &&
+           strcmp(worker_name, "bitaxe_001") != 0;
+}
+
+static bool pool_user_is_factory_default(const char *worker_name)
+{
+    return pool_user_is_meaningful(worker_name) &&
+           strcmp(worker_name, FACTORY_DEFAULT_POOL_USER) == 0;
+}
+
+static void maybe_show_armed_pool_popup(void)
+{
+    if (!pool_popup_armed_for_default_user)
+    {
+        return;
+    }
+
+    if (!pool_user_is_meaningful(current_pool_info.worker_name))
+    {
+        return;
+    }
+
+    pool_popup_armed_for_default_user = false;
+
+    if (pool_user_is_factory_default(current_pool_info.worker_name))
+    {
+        create_pool_popup();
+    }
+}
+
 static void create_pool_popup(void)
 {
     if (pool_popup != NULL)
     {
+        refresh_pool_popup_content();
         return;
     }
 
@@ -186,7 +326,7 @@ static void create_pool_popup(void)
     lv_obj_set_style_border_width(pool_popup, 0, 0);
     lv_obj_set_style_pad_all(pool_popup, 0, 0);
     lv_obj_clear_flag(pool_popup, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(pool_popup, pool_popup_close_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(pool_popup, pool_popup_overlay_clicked, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *popup_cont = lv_obj_create(pool_popup);
     lv_obj_set_size(popup_cont, 680, 360);
@@ -231,24 +371,28 @@ static void create_pool_popup(void)
     lv_obj_set_style_border_width(info_cont, 0, 0);
     lv_obj_set_style_pad_all(info_cont, 10, 0);
 
-    char buffer[128];
-    const char *labels[] = {"URL", "Port", "User"};
-    const char *values[] = {
-        current_pool_info.url,
-        current_pool_info.port,
-        current_pool_info.worker_name};
-
     int y_offset = 0;
-    for (int i = 0; i < 3; i++)
-    {
-        lv_obj_t *info_label = lv_label_create(info_cont);
-        snprintf(buffer, sizeof(buffer), "%s: %s", labels[i], values[i]);
-        lv_label_set_text(info_label, buffer);
-        lv_obj_set_style_text_color(info_label, COLOR_TEXT_PRIMARY, 0);
-        lv_obj_set_style_text_font(info_label, &lv_font_montserrat_16, 0);
-        lv_obj_set_pos(info_label, 0, y_offset);
-        y_offset += 35;
-    }
+    pool_url_label = lv_label_create(info_cont);
+    lv_label_set_long_mode(pool_url_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(pool_url_label, 280);
+    lv_obj_set_style_text_color(pool_url_label, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(pool_url_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_line_space(pool_url_label, 4, 0);
+    lv_obj_set_pos(pool_url_label, 0, y_offset);
+    y_offset += 72;
+
+    pool_port_label = lv_label_create(info_cont);
+    lv_obj_set_style_text_color(pool_port_label, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(pool_port_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_pos(pool_port_label, 0, y_offset);
+    y_offset += 35;
+
+    pool_user_label = lv_label_create(info_cont);
+    lv_label_set_long_mode(pool_user_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(pool_user_label, 280);
+    lv_obj_set_style_text_color(pool_user_label, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(pool_user_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_pos(pool_user_label, 0, y_offset);
 
     lv_obj_t *qr_cont = lv_obj_create(popup_cont);
     lv_obj_set_size(qr_cont, 280, 250);
@@ -273,64 +417,53 @@ static void create_pool_popup(void)
     lv_obj_set_style_text_font(qr_hint, &lv_font_montserrat_12, 0);
     lv_obj_align(qr_hint, LV_ALIGN_TOP_MID, 0, 28);
 
-    const char *ip = wifi_get_bitaxe_ip();
-    bool ip_available = wifi_bitaxe_is_connected();
+    pool_qr = lv_qrcode_create(qr_cont, 150, COLOR_BACKGROUND, COLOR_TEXT_PRIMARY);
+    lv_obj_align(pool_qr, LV_ALIGN_TOP_MID, 0, 64);
+    lv_obj_set_style_border_color(pool_qr, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_border_width(pool_qr, 6, 0);
 
-    if (ip_available) {
-        char qr_url[96];
-        snprintf(qr_url, sizeof(qr_url), "http://%s/#/pool", ip);
+    pool_qr_empty = lv_obj_create(qr_cont);
+    lv_obj_set_size(pool_qr_empty, 150, 150);
+    lv_obj_align(pool_qr_empty, LV_ALIGN_TOP_MID, 0, 64);
+    translucent_card_apply(pool_qr_empty, 12, LV_OPA_20);
+    lv_obj_clear_flag(pool_qr_empty, LV_OBJ_FLAG_SCROLLABLE);
 
-        lv_obj_t *qr = lv_qrcode_create(qr_cont, 150, COLOR_BACKGROUND, COLOR_TEXT_PRIMARY);
-        lv_qrcode_update(qr, qr_url, strlen(qr_url));
-        lv_obj_align(qr, LV_ALIGN_TOP_MID, 0, 64);
-        lv_obj_set_style_border_color(qr, COLOR_TEXT_PRIMARY, 0);
-        lv_obj_set_style_border_width(qr, 6, 0);
+    lv_obj_t *empty_label = lv_label_create(pool_qr_empty);
+    lv_label_set_text(empty_label, "No Bitaxe IP");
+    lv_obj_set_style_text_color(empty_label, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_font(empty_label, &lv_font_montserrat_16, 0);
+    lv_obj_center(empty_label);
 
-        lv_obj_t *url_label = lv_label_create(qr_cont);
-        lv_label_set_text(url_label, ip);
-        lv_label_set_long_mode(url_label, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(url_label, 250);
-        lv_obj_set_style_text_align(url_label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_style_text_color(url_label, lv_color_hex(0x39FF14), 0);
-        lv_obj_set_style_text_font(url_label, &lv_font_montserrat_20, 0);
-        lv_obj_align(url_label, LV_ALIGN_BOTTOM_MID, 0, 0);
-    } else {
-        lv_obj_t *qr_empty = lv_obj_create(qr_cont);
-        lv_obj_set_size(qr_empty, 150, 150);
-        lv_obj_align(qr_empty, LV_ALIGN_TOP_MID, 0, 64);
-        translucent_card_apply(qr_empty, 12, LV_OPA_20);
-        lv_obj_clear_flag(qr_empty, LV_OBJ_FLAG_SCROLLABLE);
+    pool_qr_status_label = lv_label_create(qr_cont);
+    lv_label_set_long_mode(pool_qr_status_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(pool_qr_status_label, 250);
+    lv_obj_set_style_text_align(pool_qr_status_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(pool_qr_status_label, COLOR_TEXT_SECONDARY, 0);
+    lv_obj_set_style_text_font(pool_qr_status_label, &lv_font_montserrat_12, 0);
+    lv_obj_align(pool_qr_status_label, LV_ALIGN_BOTTOM_MID, 0, -26);
 
-        lv_obj_t *empty_label = lv_label_create(qr_empty);
-        lv_label_set_text(empty_label, "No Bitaxe IP");
-        lv_obj_set_style_text_color(empty_label, COLOR_TEXT_PRIMARY, 0);
-        lv_obj_set_style_text_font(empty_label, &lv_font_montserrat_16, 0);
-        lv_obj_center(empty_label);
+    pool_qr_route_label = lv_label_create(qr_cont);
+    lv_label_set_long_mode(pool_qr_route_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(pool_qr_route_label, 250);
+    lv_obj_set_style_text_align(pool_qr_route_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(pool_qr_route_label, LV_ALIGN_BOTTOM_MID, 0, 8);
 
-        lv_obj_t *url_label = lv_label_create(qr_cont);
-        if (!wifi_is_connected()) {
-            lv_label_set_text(url_label, "Connect the touchscreen to Wi-Fi first.");
-        } else if (wifi_bitaxe_is_reconnecting()) {
-            lv_label_set_text(url_label, "Bitaxe is reconnecting after reboot or flash.");
-        } else {
-            lv_label_set_text(url_label, "Bitaxe has not reported a Wi-Fi IP yet.");
-        }
-        lv_label_set_long_mode(url_label, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(url_label, 250);
-        lv_obj_set_style_text_align(url_label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_style_text_color(url_label, COLOR_TEXT_SECONDARY, 0);
-        lv_obj_set_style_text_font(url_label, &lv_font_montserrat_12, 0);
-        lv_obj_align(url_label, LV_ALIGN_BOTTOM_MID, 0, -8);
-    }
+    refresh_pool_popup_content();
 }
 
 static void pool_popup_close_clicked(lv_event_t *e)
 {
-    if (pool_popup)
+    destroy_pool_popup();
+}
+
+static void pool_popup_overlay_clicked(lv_event_t *e)
+{
+    if (lv_event_get_target(e) != lv_event_get_current_target(e))
     {
-        lv_obj_del(pool_popup);
-        pool_popup = NULL;
+        return;
     }
+
+    destroy_pool_popup();
 }
 
 static void apply_cached_home_values(void)
@@ -638,7 +771,7 @@ void home_screen_destroy(void)
         home_screen = NULL;
         hashrate_label = NULL;
         hardware_popup = NULL;
-        pool_popup = NULL;
+        clear_pool_popup_refs();
         power_label = NULL;
         temperature_label = NULL;
         efficiency_label = NULL;
@@ -685,6 +818,17 @@ void home_pool_clicked(lv_event_t *e)
 void home_show_pool_popup(void)
 {
     create_pool_popup();
+}
+
+void home_refresh_pool_popup(void)
+{
+    refresh_pool_popup_content();
+}
+
+void home_arm_pool_popup_for_default_user(void)
+{
+    pool_popup_armed_for_default_user = true;
+    maybe_show_armed_pool_popup();
 }
 
 void home_settings_clicked(lv_event_t *e)
@@ -858,11 +1002,8 @@ void home_update_pool_info(const pool_info_t *pool_info)
             current_pool_info.worker_name[sizeof(current_pool_info.worker_name) - 1] = '\0';
         }
 
-        if (pool_popup)
-        {
-            lv_obj_del(pool_popup);
-            pool_popup = NULL;
-        }
+        refresh_pool_popup_content();
+        maybe_show_armed_pool_popup();
     }
 }
 

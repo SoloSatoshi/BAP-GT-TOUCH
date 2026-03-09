@@ -133,6 +133,7 @@ esp_err_t bap_handle_wifi_ip_response(const char *value);
  * @return ESP_OK on success, error code otherwise
  */
 esp_err_t bap_handle_wifi_password_response(const char *value);
+esp_err_t bap_handle_self_test_response(const char *value);
 
 /**
  * @brief Handle block height response

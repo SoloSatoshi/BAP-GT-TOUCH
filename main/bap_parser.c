@@ -36,6 +36,7 @@ typedef struct
     char wifi_rssi[16];
     char wifi_ip[16];
     char wifi_password[65];
+    char self_test[16];
     char block_height[24];
     bool hashrate_dirty;
     bool temperature_dirty;
@@ -47,6 +48,7 @@ typedef struct
     bool wifi_rssi_dirty;
     bool wifi_ip_dirty;
     bool wifi_password_dirty;
+    bool self_test_dirty;
     bool block_height_dirty;
 } bap_ui_cache_t;
 
@@ -142,6 +144,8 @@ esp_err_t bap_handle_response(const bap_message_t *msg) {
         ret = bap_handle_wifi_ip_response(msg->value);
     } else if (strcmp(msg->parameter, "wifi_password") == 0) {
         ret = bap_handle_wifi_password_response(msg->value);
+    } else if (strcmp(msg->parameter, "self_test") == 0) {
+        ret = bap_handle_self_test_response(msg->value);
     } else if (strcmp(msg->parameter, "block_height") == 0) {
         ret = bap_handle_block_height_response(msg->value);
     } else if (strcmp(msg->parameter, "mode") == 0) {
@@ -203,6 +207,7 @@ static bool bap_ui_cache_take_snapshot(bap_ui_cache_t *snapshot)
                 s_ui_cache.wifi_rssi_dirty ||
                 s_ui_cache.wifi_ip_dirty ||
                 s_ui_cache.wifi_password_dirty ||
+                s_ui_cache.self_test_dirty ||
                 s_ui_cache.block_height_dirty;
 
     s_ui_cache.hashrate_dirty = false;
@@ -215,6 +220,7 @@ static bool bap_ui_cache_take_snapshot(bap_ui_cache_t *snapshot)
     s_ui_cache.wifi_rssi_dirty = false;
     s_ui_cache.wifi_ip_dirty = false;
     s_ui_cache.wifi_password_dirty = false;
+    s_ui_cache.self_test_dirty = false;
     s_ui_cache.block_height_dirty = false;
     portEXIT_CRITICAL(&s_ui_cache_mux);
 
@@ -268,6 +274,10 @@ static void bap_ui_cache_restore_dirty(const bap_ui_cache_t *snapshot)
     if (snapshot->wifi_password_dirty)
     {
         s_ui_cache.wifi_password_dirty = true;
+    }
+    if (snapshot->self_test_dirty)
+    {
+        s_ui_cache.self_test_dirty = true;
     }
     if (snapshot->block_height_dirty)
     {
@@ -332,6 +342,10 @@ static void bap_ui_flush_task(void *arg)
             if (snapshot.wifi_password_dirty)
             {
                 wifi_update_password(snapshot.wifi_password);
+            }
+            if (snapshot.self_test_dirty)
+            {
+                wifi_update_self_test_state(snapshot.self_test);
             }
             if (snapshot.block_height_dirty)
             {
@@ -553,6 +567,17 @@ esp_err_t bap_handle_wifi_password_response(const char *value) {
     ESP_LOGI(TAG, "Received WiFi password");
 
     bap_ui_cache_update(s_ui_cache.wifi_password, sizeof(s_ui_cache.wifi_password), value, &s_ui_cache.wifi_password_dirty);
+    return ESP_OK;
+}
+
+esp_err_t bap_handle_self_test_response(const char *value) {
+    if (!value) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    ESP_LOGI(TAG, "Received self-test state: %s", value);
+
+    bap_ui_cache_update(s_ui_cache.self_test, sizeof(s_ui_cache.self_test), value, &s_ui_cache.self_test_dirty);
     return ESP_OK;
 }
 

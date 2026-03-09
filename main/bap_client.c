@@ -226,20 +226,28 @@ esp_err_t bap_client_send_password(const char *password) {
         return ESP_ERR_INVALID_ARG;
     }
     
+    return bap_client_send_setting("password", password);
+}
+
+esp_err_t bap_client_send_setting(const char *parameter, const char *value) {
+    if (!parameter || strlen(parameter) == 0 || !value) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     char message[BAP_MAX_MESSAGE_LEN];
-    esp_err_t ret = bap_format_message(message, sizeof(message), BAP_CMD_SET, "password", password);
+    esp_err_t ret = bap_format_message(message, sizeof(message), BAP_CMD_SET, parameter, value);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to format password message");
+        ESP_LOGE(TAG, "Failed to format setting message for %s", parameter);
         return ret;
     }
     
     ret = bap_uart_write(message, strlen(message));
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to send password setting");
+        ESP_LOGE(TAG, "Failed to send setting for %s", parameter);
         return ret;
     }
     
-    ESP_LOGI(TAG, "Sent password setting: %s", message);
+    ESP_LOGI(TAG, "Sent setting: %s", message);
     return ESP_OK;
 }
 

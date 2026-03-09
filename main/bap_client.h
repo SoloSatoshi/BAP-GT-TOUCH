@@ -76,6 +76,7 @@ esp_err_t bap_client_send_ssid(const char *ssid);
  * @return ESP_OK on success, error code otherwise
  */
 esp_err_t bap_client_send_password(const char *password);
+esp_err_t bap_client_send_setting(const char *parameter, const char *value);
 
 /**
  * @brief Check if BAP client is connected
