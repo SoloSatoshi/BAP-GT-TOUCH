@@ -16,13 +16,14 @@
 #include "wifi.h"
 #include "block.h"
 #include "night.h"
+#include "settings.h"
 #include "lvgl_port.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 static const char *TAG = "BAP_PARSER";
 
-#define BAP_UI_FLUSH_INTERVAL_MS 250
+#define BAP_UI_FLUSH_INTERVAL_MS 100
 
 typedef struct
 {
@@ -37,7 +38,13 @@ typedef struct
     char wifi_ip[16];
     char wifi_password[65];
     char self_test[16];
+    char mode[16];
     char block_height[24];
+    char device_model[32];
+    char asic_model[32];
+    char pool_url[128];
+    char pool_port[16];
+    char pool_user[128];
     bool hashrate_dirty;
     bool temperature_dirty;
     bool power_dirty;
@@ -49,7 +56,13 @@ typedef struct
     bool wifi_ip_dirty;
     bool wifi_password_dirty;
     bool self_test_dirty;
+    bool mode_dirty;
     bool block_height_dirty;
+    bool device_model_dirty;
+    bool asic_model_dirty;
+    bool pool_url_dirty;
+    bool pool_port_dirty;
+    bool pool_user_dirty;
 } bap_ui_cache_t;
 
 static bap_ui_cache_t s_ui_cache = {0};
@@ -79,22 +92,16 @@ esp_err_t bap_parse_and_handle_message(const char *message) {
         return ret;
     }
     
-    if (parsed_msg.command == BAP_CMD_RES) {
-        // Verify checksum for RES messages
+    if (parsed_msg.command == BAP_CMD_RES ||
+        parsed_msg.command == BAP_CMD_CMD ||
+        parsed_msg.command == BAP_CMD_ACK ||
+        parsed_msg.command == BAP_CMD_ERR ||
+        parsed_msg.command == BAP_CMD_STA) {
         if (!bap_verify_checksum(message)) {
             uint8_t calculated = bap_calculate_checksum(parsed_msg.parameter);
             uint8_t received = (uint8_t)strtol(parsed_msg.checksum_str, NULL, 16);
-            ESP_LOGE(TAG, "Checksum mismatch for %s: calculated %02X, received %02X",
-                    parsed_msg.parameter, calculated, received);
-            return ESP_ERR_INVALID_CRC;
-        }
-        return bap_handle_response(&parsed_msg);
-    } else if (parsed_msg.command == BAP_CMD_CMD) {
-        // Handle CMD messages (checksum already verified by protocol parser)
-        if (!bap_verify_checksum(message)) {
-            uint8_t calculated = bap_calculate_checksum(parsed_msg.parameter);
-            uint8_t received = (uint8_t)strtol(parsed_msg.checksum_str, NULL, 16);
-            ESP_LOGE(TAG, "Checksum mismatch for CMD %s: calculated %02X, received %02X",
+            ESP_LOGE(TAG, "Checksum mismatch for %s %s: calculated %02X, received %02X",
+                    parsed_msg.command_str,
                     parsed_msg.parameter, calculated, received);
             return ESP_ERR_INVALID_CRC;
         }
@@ -111,6 +118,19 @@ esp_err_t bap_handle_response(const bap_message_t *msg) {
     }
     
     esp_err_t ret = ESP_OK;
+
+    if ((msg->command == BAP_CMD_ACK && strcmp(msg->parameter, "factory_reset") == 0) ||
+        (msg->command == BAP_CMD_STA &&
+         strcmp(msg->parameter, "status") == 0 &&
+         strcmp(msg->value, "factory_resetting") == 0)) {
+        settings_factory_reset_note_bitaxe_ack();
+        return ESP_OK;
+    }
+
+    if (msg->command == BAP_CMD_ERR) {
+        ESP_LOGW(TAG, "Ignoring BAP error for %s: %s", msg->parameter, msg->value ? msg->value : "");
+        return ESP_OK;
+    }
     
     if (strcmp(msg->parameter, "hashrate") == 0) {
         ret = bap_handle_hashrate_response(msg->value);
@@ -208,7 +228,13 @@ static bool bap_ui_cache_take_snapshot(bap_ui_cache_t *snapshot)
                 s_ui_cache.wifi_ip_dirty ||
                 s_ui_cache.wifi_password_dirty ||
                 s_ui_cache.self_test_dirty ||
-                s_ui_cache.block_height_dirty;
+                s_ui_cache.mode_dirty ||
+                s_ui_cache.block_height_dirty ||
+                s_ui_cache.device_model_dirty ||
+                s_ui_cache.asic_model_dirty ||
+                s_ui_cache.pool_url_dirty ||
+                s_ui_cache.pool_port_dirty ||
+                s_ui_cache.pool_user_dirty;
 
     s_ui_cache.hashrate_dirty = false;
     s_ui_cache.temperature_dirty = false;
@@ -221,7 +247,13 @@ static bool bap_ui_cache_take_snapshot(bap_ui_cache_t *snapshot)
     s_ui_cache.wifi_ip_dirty = false;
     s_ui_cache.wifi_password_dirty = false;
     s_ui_cache.self_test_dirty = false;
+    s_ui_cache.mode_dirty = false;
     s_ui_cache.block_height_dirty = false;
+    s_ui_cache.device_model_dirty = false;
+    s_ui_cache.asic_model_dirty = false;
+    s_ui_cache.pool_url_dirty = false;
+    s_ui_cache.pool_port_dirty = false;
+    s_ui_cache.pool_user_dirty = false;
     portEXIT_CRITICAL(&s_ui_cache_mux);
 
     return any_dirty;
@@ -279,9 +311,33 @@ static void bap_ui_cache_restore_dirty(const bap_ui_cache_t *snapshot)
     {
         s_ui_cache.self_test_dirty = true;
     }
+    if (snapshot->mode_dirty)
+    {
+        s_ui_cache.mode_dirty = true;
+    }
     if (snapshot->block_height_dirty)
     {
         s_ui_cache.block_height_dirty = true;
+    }
+    if (snapshot->device_model_dirty)
+    {
+        s_ui_cache.device_model_dirty = true;
+    }
+    if (snapshot->asic_model_dirty)
+    {
+        s_ui_cache.asic_model_dirty = true;
+    }
+    if (snapshot->pool_url_dirty)
+    {
+        s_ui_cache.pool_url_dirty = true;
+    }
+    if (snapshot->pool_port_dirty)
+    {
+        s_ui_cache.pool_port_dirty = true;
+    }
+    if (snapshot->pool_user_dirty)
+    {
+        s_ui_cache.pool_user_dirty = true;
     }
     portEXIT_CRITICAL(&s_ui_cache_mux);
 }
@@ -302,6 +358,9 @@ static void bap_ui_flush_task(void *arg)
 
         if (lvgl_port_lock(20))
         {
+            pool_info_t pool_update = {0};
+            bool pool_info_dirty = false;
+
             if (snapshot.hashrate_dirty)
             {
                 home_update_hashrate(snapshot.hashrate);
@@ -347,9 +406,43 @@ static void bap_ui_flush_task(void *arg)
             {
                 wifi_update_self_test_state(snapshot.self_test);
             }
+            if (snapshot.mode_dirty)
+            {
+                wifi_update_mode(snapshot.mode);
+            }
             if (snapshot.block_height_dirty)
             {
                 block_update_height(snapshot.block_height);
+            }
+            if (snapshot.device_model_dirty)
+            {
+                home_update_device_model(snapshot.device_model);
+            }
+            if (snapshot.asic_model_dirty)
+            {
+                home_update_asic_model(snapshot.asic_model);
+            }
+            if (snapshot.pool_url_dirty)
+            {
+                strncpy(pool_update.url, snapshot.pool_url, sizeof(pool_update.url) - 1);
+                pool_update.url[sizeof(pool_update.url) - 1] = '\0';
+                pool_info_dirty = true;
+            }
+            if (snapshot.pool_port_dirty)
+            {
+                strncpy(pool_update.port, snapshot.pool_port, sizeof(pool_update.port) - 1);
+                pool_update.port[sizeof(pool_update.port) - 1] = '\0';
+                pool_info_dirty = true;
+            }
+            if (snapshot.pool_user_dirty)
+            {
+                strncpy(pool_update.worker_name, snapshot.pool_user, sizeof(pool_update.worker_name) - 1);
+                pool_update.worker_name[sizeof(pool_update.worker_name) - 1] = '\0';
+                pool_info_dirty = true;
+            }
+            if (pool_info_dirty)
+            {
+                home_update_pool_info(&pool_update);
             }
 
             lvgl_port_unlock();
@@ -439,14 +532,8 @@ esp_err_t bap_handle_device_model_response(const char *value) {
     
     ESP_LOGI(TAG, "Received device model: %s", value);
     
-    if (lvgl_port_lock(100)) {
-        home_update_device_model(value);
-        lvgl_port_unlock();
-        return ESP_OK;
-    } else {
-        ESP_LOGW(TAG, "Failed to acquire LVGL mutex for device model update");
-        return ESP_ERR_TIMEOUT;
-    }
+    bap_ui_cache_update(s_ui_cache.device_model, sizeof(s_ui_cache.device_model), value, &s_ui_cache.device_model_dirty);
+    return ESP_OK;
 }
 
 esp_err_t bap_handle_asic_model_response(const char *value) {
@@ -456,14 +543,8 @@ esp_err_t bap_handle_asic_model_response(const char *value) {
     
     ESP_LOGI(TAG, "Received ASIC model: %s", value);
     
-    if (lvgl_port_lock(100)) {
-        home_update_asic_model(value);
-        lvgl_port_unlock();
-        return ESP_OK;
-    } else {
-        ESP_LOGW(TAG, "Failed to acquire LVGL mutex for ASIC model update");
-        return ESP_ERR_TIMEOUT;
-    }
+    bap_ui_cache_update(s_ui_cache.asic_model, sizeof(s_ui_cache.asic_model), value, &s_ui_cache.asic_model_dirty);
+    return ESP_OK;
 }
 
 esp_err_t bap_handle_pool_url_response(const char *value) {
@@ -473,17 +554,8 @@ esp_err_t bap_handle_pool_url_response(const char *value) {
     
     ESP_LOGI(TAG, "Received pool URL: %s", value);
     
-    pool_info_t pool_update = {0};
-    strncpy(pool_update.url, value, sizeof(pool_update.url) - 1);
-    
-    if (lvgl_port_lock(100)) {
-        home_update_pool_info(&pool_update);
-        lvgl_port_unlock();
-        return ESP_OK;
-    } else {
-        ESP_LOGW(TAG, "Failed to acquire LVGL mutex for pool info update");
-        return ESP_ERR_TIMEOUT;
-    }
+    bap_ui_cache_update(s_ui_cache.pool_url, sizeof(s_ui_cache.pool_url), value, &s_ui_cache.pool_url_dirty);
+    return ESP_OK;
 }
 
 esp_err_t bap_handle_pool_port_response(const char *value) {
@@ -493,17 +565,8 @@ esp_err_t bap_handle_pool_port_response(const char *value) {
     
     ESP_LOGI(TAG, "Received pool port: %s", value);
     
-    pool_info_t pool_update = {0};
-    strncpy(pool_update.port, value, sizeof(pool_update.port) - 1);
-    
-    if (lvgl_port_lock(100)) {
-        home_update_pool_info(&pool_update);
-        lvgl_port_unlock();
-        return ESP_OK;
-    } else {
-        ESP_LOGW(TAG, "Failed to acquire LVGL mutex for pool port update");
-        return ESP_ERR_TIMEOUT;
-    }
+    bap_ui_cache_update(s_ui_cache.pool_port, sizeof(s_ui_cache.pool_port), value, &s_ui_cache.pool_port_dirty);
+    return ESP_OK;
 }
 
 esp_err_t bap_handle_pool_user_response(const char *value) {
@@ -513,17 +576,8 @@ esp_err_t bap_handle_pool_user_response(const char *value) {
     
     ESP_LOGI(TAG, "Received pool user: %s", value);
     
-    pool_info_t pool_update = {0};
-    strncpy(pool_update.worker_name, value, sizeof(pool_update.worker_name) - 1);
-    
-    if (lvgl_port_lock(100)) {
-        home_update_pool_info(&pool_update);
-        lvgl_port_unlock();
-        return ESP_OK;
-    } else {
-        ESP_LOGW(TAG, "Failed to acquire LVGL mutex for pool user update");
-        return ESP_ERR_TIMEOUT;
-    }
+    bap_ui_cache_update(s_ui_cache.pool_user, sizeof(s_ui_cache.pool_user), value, &s_ui_cache.pool_user_dirty);
+    return ESP_OK;
 }
 
 esp_err_t bap_handle_wifi_ssid_response(const char *value) {
@@ -599,15 +653,6 @@ esp_err_t bap_handle_mode(const char *value) {
     
     ESP_LOGI(TAG, "Received mode: %s", value);
     
-
-    if (lvgl_port_lock(100)) {
-        if(strcmp(value, "ap_mode") == 0) {
-            home_wifi_clicked(NULL);
-        }
-        lvgl_port_unlock();
-        return ESP_OK;
-    } else {
-        ESP_LOGW(TAG, "Failed to acquire LVGL mutex for mode update");
-        return ESP_ERR_TIMEOUT;
-    }
+    bap_ui_cache_update(s_ui_cache.mode, sizeof(s_ui_cache.mode), value, &s_ui_cache.mode_dirty);
+    return ESP_OK;
 }

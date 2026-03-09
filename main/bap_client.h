@@ -91,6 +91,7 @@ uint32_t bap_client_get_ms_since_last_response(void);
  * Used when connection is lost and needs to be re-established
  */
 void bap_client_reset_connection_state(void);
+esp_err_t bap_client_force_resubscribe(void);
 
 /**
  * @brief Suspend BAP client tasks (for OTA updates)

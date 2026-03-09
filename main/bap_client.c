@@ -31,6 +31,7 @@ static bool subscribed_wifi = false;
 static bool subscribed_block_height = false;
 static bool subscribed_wifi_password = false;
 static uint32_t last_response_time = 0;
+static uint32_t last_force_resubscribe_time = 0;
 
 // Task handles for suspend/resume
 static TaskHandle_t uart_receive_task_handle = NULL;
@@ -289,6 +290,26 @@ void bap_client_reset_connection_state(void) {
     subscribed_block_height = false;
     subscribed_wifi_password = false;
     last_response_time = 0;
+}
+
+esp_err_t bap_client_force_resubscribe(void) {
+    uint32_t current_time = xTaskGetTickCount();
+    if (last_force_resubscribe_time > 0 &&
+        (current_time - last_force_resubscribe_time) < pdMS_TO_TICKS(3000)) {
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "Forcing BAP resubscribe");
+    bap_client_reset_connection_state();
+    last_force_resubscribe_time = current_time;
+
+    BaseType_t task_ret = xTaskCreate(uart_send_task, "uart_send_force", 4096, NULL, 5, NULL);
+    if (task_ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create forced resubscribe task");
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
 }
 
 static esp_err_t bap_subscribe_hashrate(void) {

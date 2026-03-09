@@ -78,6 +78,7 @@ static bool timezone_applied = false;
 static bool settings_nvs_ready = false;
 static bool weather_location_loaded = false;
 static bool weather_temperature_unit_loaded = false;
+static volatile bool factory_reset_bitaxe_ack = false;
 static char current_weather_country_code[3] = "US";
 static char current_weather_postal_code[20] = "";
 static weather_temperature_unit_t current_weather_temperature_unit = WEATHER_TEMPERATURE_UNIT_F;
@@ -176,11 +177,13 @@ static void settings_factory_reset_close_popup(void);
 static void settings_factory_reset_show_popup(void);
 static void settings_factory_reset_show_progress(void);
 static void settings_factory_reset_task(void *pvParameters);
+static void settings_factory_reset_timeout_async(void *data);
 
 #define SETTINGS_SECTION_WIDTH 680
 #define SETTINGS_SECTION_GAP 14
 #define SETTINGS_CONTENT_START_Y 46
 #define SETTINGS_THEME_RELOAD_BLOCK_MS 1000
+#define SETTINGS_FACTORY_RESET_ACK_TIMEOUT_MS 8000
 
 static lv_obj_t *create_settings_button(lv_obj_t *parent, const char *text, lv_event_cb_t event_cb, bool active)
 {
@@ -648,6 +651,11 @@ static void settings_ta_event_handler(lv_event_t *e)
 
     if (code == LV_EVENT_FOCUSED)
     {
+        if (ta == weather_postal_ta)
+        {
+            lv_textarea_set_placeholder_text(ta, "");
+        }
+
         if (settings_keyboard && lv_obj_has_flag(settings_keyboard, LV_OBJ_FLAG_HIDDEN))
         {
             lv_keyboard_set_textarea(settings_keyboard, ta);
@@ -863,14 +871,49 @@ static void settings_factory_reset_task(void *pvParameters)
 {
     LV_UNUSED(pvParameters);
 
-    vTaskDelay(pdMS_TO_TICKS(400));
+    const TickType_t start = xTaskGetTickCount();
 
+    while (!factory_reset_bitaxe_ack &&
+           (xTaskGetTickCount() - start) < pdMS_TO_TICKS(SETTINGS_FACTORY_RESET_ACK_TIMEOUT_MS)) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    if (!factory_reset_bitaxe_ack) {
+        factory_reset_in_progress = false;
+        lv_async_call(settings_factory_reset_timeout_async, NULL);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(300));
     nvs_flash_deinit();
     nvs_flash_erase();
     settings_nvs_ready = false;
 
     vTaskDelay(pdMS_TO_TICKS(100));
     esp_restart();
+}
+
+static void settings_factory_reset_timeout_async(void *data)
+{
+    LV_UNUSED(data);
+
+    if (factory_reset_message_label) {
+        lv_label_set_text(factory_reset_message_label,
+                          "Bitaxe reset did not confirm.\n"
+                          "Nothing was erased on the touchscreen.\n"
+                          "Try again once both sides are connected.");
+    }
+}
+
+void settings_factory_reset_note_bitaxe_ack(void)
+{
+    factory_reset_bitaxe_ack = true;
+}
+
+bool settings_factory_reset_is_in_progress(void)
+{
+    return factory_reset_in_progress;
 }
 
 static void settings_factory_reset_confirm_clicked(lv_event_t *e)
@@ -881,8 +924,12 @@ static void settings_factory_reset_confirm_clicked(lv_event_t *e)
         return;
     }
 
+    factory_reset_bitaxe_ack = false;
+    factory_reset_in_progress = true;
+
     esp_err_t ret = BAP_send_setting("factory_reset", "1");
     if (ret != ESP_OK) {
+        factory_reset_in_progress = false;
         if (factory_reset_message_label) {
             lv_label_set_text(factory_reset_message_label,
                               "Unable to reach the Bitaxe right now.\n"
@@ -891,7 +938,6 @@ static void settings_factory_reset_confirm_clicked(lv_event_t *e)
         return;
     }
 
-    factory_reset_in_progress = true;
     settings_factory_reset_show_progress();
 
     if (xTaskCreate(settings_factory_reset_task, "settings_factory_reset", 4096, NULL, 5, NULL) != pdPASS) {
@@ -1833,7 +1879,7 @@ void settings_weather_location_save_clicked(lv_event_t *e)
     lv_textarea_set_text(weather_postal_ta, current_weather_postal_code);
     weather_service_start();
     weather_service_request_refresh();
-    settings_weather_set_status("Weather location saved, fetching now", COLOR_ACCENT);
+    settings_weather_set_status(LV_SYMBOL_OK " Weather location saved!", lv_color_hex(0x39FF14));
 }
 
 price_currency_t settings_get_price_currency(void)

@@ -21,6 +21,9 @@ typedef enum {
     BAP_CMD_REQ,        // Request
     BAP_CMD_SET,        // Set
     BAP_CMD_CMD,        // Command
+    BAP_CMD_ACK,        // Acknowledge
+    BAP_CMD_ERR,        // Error
+    BAP_CMD_STA,        // Status
     BAP_CMD_UNKNOWN
 } bap_command_t;
 

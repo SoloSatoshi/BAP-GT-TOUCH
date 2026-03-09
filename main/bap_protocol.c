@@ -18,7 +18,10 @@ static const char *command_strings[] = {
     "RES", 
     "REQ",
     "SET",
-    "CMD"
+    "CMD",
+    "ACK",
+    "ERR",
+    "STA"
 };
 
 const char* bap_command_to_string(bap_command_t cmd) {

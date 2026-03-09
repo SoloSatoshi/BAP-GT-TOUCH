@@ -62,5 +62,7 @@ const char *settings_get_price_currency_suffix(void);
 const char *settings_get_weather_country_code(void);
 const char *settings_get_weather_postal_code(void);
 weather_temperature_unit_t settings_get_weather_temperature_unit(void);
+void settings_factory_reset_note_bitaxe_ack(void);
+bool settings_factory_reset_is_in_progress(void);
 
 #endif // SETTINGS_H

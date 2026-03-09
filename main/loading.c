@@ -187,5 +187,7 @@ static void finish_loading(void)
 
 static bool loading_should_boot_to_wifi(void)
 {
-    return !wifi_has_saved_credentials();
+    return !wifi_has_saved_credentials() ||
+           !wifi_is_connected() ||
+           !wifi_bitaxe_is_connected();
 }

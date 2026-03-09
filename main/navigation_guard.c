@@ -199,6 +199,12 @@ void ui_navigation_guarded_click_cb(lv_event_t *e)
     }
 
     int64_t now = esp_timer_get_time();
+
+    if (settings_factory_reset_is_in_progress())
+    {
+        return;
+    }
+
     if (!wifi_has_saved_credentials() && !ui_navigation_cb_allows_missing_wifi_credentials(cb))
     {
         s_navigation_block_until_us = now + UI_NAVIGATION_GUARD_US;

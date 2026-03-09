@@ -29,6 +29,7 @@ void wifi_update_rssi(const char* rssi);
 void wifi_update_ip(const char* ip);
 void wifi_update_password(const char* password);
 void wifi_update_self_test_state(const char* state);
+void wifi_update_mode(const char* mode);
 bool wifi_is_connected(void);
 bool wifi_has_saved_credentials(void);
 bool wifi_bitaxe_is_connected(void);

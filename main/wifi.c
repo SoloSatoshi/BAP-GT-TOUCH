@@ -13,6 +13,7 @@
 #include "navigation_guard.h"
 #include "theme.h"
 #include "keyboard_theme.h"
+#include "bap_client.h"
 #include "stdio.h"
 #include "string.h"
 #include "custom_fonts.h"
@@ -51,8 +52,11 @@ static lv_obj_t * connection_spinner = NULL;
 static bool wifi_initialized = false;
 static bool wifi_event_handlers_registered = false;
 static bool wifi_connect_pending = false;
+static bool wifi_waiting_for_bitaxe_after_connect = false;
 static esp_netif_t *wifi_sta_netif = NULL;
 static bool wifi_show_pool_after_connect = false;
+static int64_t wifi_home_transition_ready_us = 0;
+static int64_t wifi_bitaxe_resubscribe_retry_us = 0;
 static bool bitaxe_wifi_seen = false;
 static char bitaxe_self_test_state[16] = "";
 static int64_t bitaxe_self_test_updated_us = 0;
@@ -97,21 +101,31 @@ static bool wifi_ip_is_valid(const char *ip);
 static bool wifi_bitaxe_has_recent_bap(void);
 static bool wifi_bitaxe_self_test_state_is_fresh(void);
 static bool wifi_bitaxe_self_test_is_active(void);
+static void wifi_clear_bitaxe_self_test_state(void);
+static int64_t wifi_bitaxe_self_test_age_us(void);
 
 static void wifi_refresh_status_ui(void)
 {
+    const int64_t bitaxe_self_test_age_us = wifi_bitaxe_self_test_age_us();
     const bool touch_connected = current_wifi_info.is_connected ||
                                  wifi_connection_state == WIFI_CONNECTION_STATE_CONNECTED;
     const bool touch_connecting = (wifi_connect_pending ||
                                    wifi_connection_state == WIFI_CONNECTION_STATE_CONNECTING) && !touch_connected;
     const bool touch_failed = wifi_connection_state == WIFI_CONNECTION_STATE_FAILED;
     const bool bap_online = wifi_bitaxe_has_recent_bap();
+    const bool bitaxe_connected = wifi_bitaxe_is_connected();
     const bool bitaxe_ip_valid = wifi_ip_is_valid(bitaxe_wifi_info.ip_address);
     const bool bitaxe_self_test_active = wifi_bitaxe_self_test_is_active();
     const bool bitaxe_self_test_running = bitaxe_self_test_active && strcmp(bitaxe_self_test_state, "running") == 0;
     const bool bitaxe_self_test_pass = bitaxe_self_test_active && strcmp(bitaxe_self_test_state, "pass") == 0;
     const bool bitaxe_self_test_fail = bitaxe_self_test_active && strcmp(bitaxe_self_test_state, "fail") == 0;
+    const bool bitaxe_self_test_pass_visible = bitaxe_self_test_pass && bitaxe_self_test_age_us < (3LL * 1000 * 1000);
     const bool bitaxe_has_wifi_config = bitaxe_wifi_info.ssid[0] != '\0';
+    const bool system_connected = touch_connected && bitaxe_connected && !bitaxe_self_test_active;
+    const bool connect_flow_waiting_for_bitaxe = wifi_waiting_for_bitaxe_after_connect &&
+                                                 touch_connected &&
+                                                 !bitaxe_connected;
+
     if (ssid_label) {
         char network_text[96];
 
@@ -126,18 +140,22 @@ static void wifi_refresh_status_ui(void)
     }
 
     if (status_label) {
-        if (touch_connecting) {
-            lv_label_set_text(status_label, "Connecting");
-            lv_obj_set_style_text_color(status_label, COLOR_ACCENT, 0);
-        } else if (touch_connected) {
+        if (system_connected) {
             lv_label_set_text(status_label, "Connected");
             lv_obj_set_style_text_color(status_label, lv_color_hex(0x39FF14), 0);
+            lv_obj_align(status_label, LV_ALIGN_TOP_LEFT, 64, 25);
+        } else if (touch_connecting) {
+            lv_label_set_text(status_label, "Disconnected");
+            lv_obj_set_style_text_color(status_label, COLOR_ACCENT, 0);
+            lv_obj_align(status_label, LV_ALIGN_TOP_LEFT, 40, 25);
         } else if (touch_failed) {
             lv_label_set_text(status_label, "Disconnected");
             lv_obj_set_style_text_color(status_label, COLOR_RED, 0);
+            lv_obj_align(status_label, LV_ALIGN_TOP_LEFT, 40, 25);
         } else {
             lv_label_set_text(status_label, "Disconnected");
             lv_obj_set_style_text_color(status_label, COLOR_TEXT_PRIMARY, 0);
+            lv_obj_align(status_label, LV_ALIGN_TOP_LEFT, 40, 25);
         }
     }
 
@@ -145,9 +163,18 @@ static void wifi_refresh_status_ui(void)
         const char *detail_text = NULL;
         lv_color_t detail_color = COLOR_TEXT_PRIMARY;
 
-        if (touch_connecting) {
+        if (touch_connecting || connect_flow_waiting_for_bitaxe) {
             detail_text = "This will only take a moment";
             detail_color = COLOR_ACCENT;
+        } else if (bitaxe_self_test_running) {
+            detail_text = "Bitaxe self-test in progress";
+            detail_color = COLOR_ACCENT;
+        } else if (bitaxe_self_test_pass_visible) {
+            detail_text = LV_SYMBOL_OK " Bitaxe self-test passed";
+            detail_color = lv_color_hex(0x39FF14);
+        } else if (bitaxe_self_test_fail) {
+            detail_text = "Bitaxe self-test failed";
+            detail_color = COLOR_RED;
         } else if (touch_failed) {
             detail_text = "Check password and try again";
             detail_color = COLOR_RED;
@@ -167,8 +194,9 @@ static void wifi_refresh_status_ui(void)
     }
 
     if (connection_success_icon) {
-        if (touch_connected) {
+        if (system_connected) {
             lv_obj_clear_flag(connection_success_icon, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_align(connection_success_icon, LV_ALIGN_TOP_LEFT, 40, 24);
         } else {
             lv_obj_add_flag(connection_success_icon, LV_OBJ_FLAG_HIDDEN);
         }
@@ -183,15 +211,8 @@ static void wifi_refresh_status_ui(void)
         const char *bitaxe_text = NULL;
         lv_color_t bitaxe_color = COLOR_TEXT_PRIMARY;
 
-        if (bitaxe_self_test_running) {
-            bitaxe_text = "Bitaxe: Self-test running";
-            bitaxe_color = COLOR_ACCENT;
-        } else if (bitaxe_self_test_pass) {
-            bitaxe_text = "Bitaxe: Restarting after self-test";
-            bitaxe_color = COLOR_ACCENT;
-        } else if (bitaxe_self_test_fail) {
-            bitaxe_text = "Bitaxe: Self-test failed";
-            bitaxe_color = COLOR_RED;
+        if (bitaxe_self_test_active) {
+            bitaxe_text = NULL;
         } else if (!touch_connected) {
             bitaxe_text = NULL;
         } else if (!bitaxe_wifi_seen && !bap_online) {
@@ -231,8 +252,9 @@ static void wifi_refresh_status_ui(void)
     }
 
     if (connection_spinner) {
-        if (touch_connecting) {
+        if (touch_connecting || connect_flow_waiting_for_bitaxe || bitaxe_self_test_running) {
             lv_obj_clear_flag(connection_spinner, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_align(connection_spinner, LV_ALIGN_CENTER, 0, -12);
         } else {
             lv_obj_add_flag(connection_spinner, LV_OBJ_FLAG_HIDDEN);
         }
@@ -251,6 +273,9 @@ static void wifi_set_connection_state(wifi_connection_state_t state)
         wifi_connect_deadline_us = esp_timer_get_time() + 30LL * 1000 * 1000;
     } else {
         current_wifi_info.is_connected = false;
+        wifi_waiting_for_bitaxe_after_connect = false;
+        wifi_home_transition_ready_us = 0;
+        wifi_bitaxe_resubscribe_retry_us = 0;
         if (state != WIFI_CONNECTION_STATE_FAILED) {
             wifi_connect_deadline_us = 0;
         }
@@ -284,9 +309,30 @@ static bool wifi_bitaxe_self_test_is_active(void)
         return false;
     }
 
-    return strcmp(bitaxe_self_test_state, "running") == 0 ||
-           strcmp(bitaxe_self_test_state, "pass") == 0 ||
-           strcmp(bitaxe_self_test_state, "fail") == 0;
+    if (strcmp(bitaxe_self_test_state, "running") == 0) {
+        return true;
+    }
+
+    if (strcmp(bitaxe_self_test_state, "pass") == 0) {
+        return wifi_bitaxe_self_test_age_us() < (3LL * 1000 * 1000);
+    }
+
+    return strcmp(bitaxe_self_test_state, "fail") == 0;
+}
+
+static void wifi_clear_bitaxe_self_test_state(void)
+{
+    bitaxe_self_test_state[0] = '\0';
+    bitaxe_self_test_updated_us = 0;
+}
+
+static int64_t wifi_bitaxe_self_test_age_us(void)
+{
+    if (bitaxe_self_test_updated_us == 0) {
+        return INT64_MAX;
+    }
+
+    return esp_timer_get_time() - bitaxe_self_test_updated_us;
 }
 
 static lv_obj_t* create_wifi_button(lv_obj_t* parent, const char* text, lv_event_cb_t event_cb)
@@ -746,13 +792,13 @@ void wifi_screen_create(void)
     lv_obj_align(signal_label, LV_ALIGN_TOP_LEFT, 40, 45);
     lv_obj_add_flag(signal_label, LV_OBJ_FLAG_HIDDEN);
 
-    connection_spinner = lv_spinner_create(current_wifi_cont, 1000, 60);
-    lv_obj_set_size(connection_spinner, 20, 20);
-    lv_obj_align(connection_spinner, LV_ALIGN_TOP_RIGHT, 0, 22);
+    connection_spinner = lv_spinner_create(main_cont, 1000, 60);
+    lv_obj_set_size(connection_spinner, 48, 48);
+    lv_obj_align(connection_spinner, LV_ALIGN_CENTER, 0, -12);
     lv_obj_set_style_arc_color(connection_spinner, COLOR_BORDER, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(connection_spinner, 3, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(connection_spinner, 5, LV_PART_MAIN);
     lv_obj_set_style_arc_color(connection_spinner, COLOR_ACCENT, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_width(connection_spinner, 3, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(connection_spinner, 5, LV_PART_INDICATOR);
     lv_obj_add_flag(connection_spinner, LV_OBJ_FLAG_HIDDEN);
 
     connection_success_icon = lv_label_create(current_wifi_cont);
@@ -1000,8 +1046,9 @@ void wifi_update_ip(const char* ip)
         bitaxe_wifi_info.ip_address[sizeof(bitaxe_wifi_info.ip_address) - 1] = '\0';
         bitaxe_wifi_info.is_connected = wifi_ip_is_valid(bitaxe_wifi_info.ip_address);
         if (bitaxe_wifi_info.is_connected) {
-            bitaxe_self_test_state[0] = '\0';
-            bitaxe_self_test_updated_us = 0;
+            wifi_clear_bitaxe_self_test_state();
+            wifi_waiting_for_bitaxe_after_connect = false;
+            wifi_bitaxe_resubscribe_retry_us = 0;
         }
         bitaxe_wifi_seen = true;
         home_refresh_pool_popup();
@@ -1028,6 +1075,28 @@ void wifi_update_self_test_state(const char* state)
     bitaxe_self_test_state[sizeof(bitaxe_self_test_state) - 1] = '\0';
     bitaxe_self_test_updated_us = esp_timer_get_time();
     bitaxe_wifi_seen = true;
+    wifi_refresh_status_ui();
+}
+
+void wifi_update_mode(const char* mode)
+{
+    if (!mode) {
+        return;
+    }
+
+    bitaxe_wifi_seen = true;
+
+    if (strcmp(mode, "ap_mode") == 0) {
+        bitaxe_wifi_info.ssid[0] = '\0';
+        bitaxe_wifi_info.password[0] = '\0';
+        bitaxe_wifi_info.ip_address[0] = '\0';
+        bitaxe_wifi_info.is_connected = false;
+        if (bitaxe_self_test_state[0] == '\0') {
+            wifi_clear_bitaxe_self_test_state();
+        }
+        home_refresh_pool_popup();
+    }
+
     wifi_refresh_status_ui();
 }
 
@@ -1131,12 +1200,32 @@ void wifi_task_handler(void)
         wifi_connection_state == WIFI_CONNECTION_STATE_CONNECTED &&
         wifi_bitaxe_is_connected())
     {
-        wifi_show_pool_after_connect = false;
-        home_screen_create();
-        lv_scr_load(home_get_screen());
-        wifi_screen_destroy();
-        home_arm_pool_popup_for_default_user();
-        return;
+        if (wifi_home_transition_ready_us == 0) {
+            wifi_home_transition_ready_us = esp_timer_get_time() + 1000LL * 1000;
+        } else if (esp_timer_get_time() >= wifi_home_transition_ready_us) {
+            wifi_show_pool_after_connect = false;
+            wifi_home_transition_ready_us = 0;
+            home_screen_create();
+            lv_scr_load(home_get_screen());
+            wifi_screen_destroy();
+            home_arm_pool_popup_for_default_user();
+            return;
+        }
+    } else {
+        wifi_home_transition_ready_us = 0;
+    }
+
+    if (wifi_waiting_for_bitaxe_after_connect &&
+        wifi_connection_state == WIFI_CONNECTION_STATE_CONNECTED &&
+        !wifi_bitaxe_is_connected()) {
+        if (wifi_bitaxe_resubscribe_retry_us == 0) {
+            wifi_bitaxe_resubscribe_retry_us = esp_timer_get_time() + 4000LL * 1000;
+        } else if (esp_timer_get_time() >= wifi_bitaxe_resubscribe_retry_us) {
+            bap_client_force_resubscribe();
+            wifi_bitaxe_resubscribe_retry_us = esp_timer_get_time() + 4000LL * 1000;
+        }
+    } else {
+        wifi_bitaxe_resubscribe_retry_us = 0;
     }
 
     if (wifi_connection_state == WIFI_CONNECTION_STATE_CONNECTING &&
@@ -1203,6 +1292,9 @@ void wifi_connect_clicked(lv_event_t * e)
             bitaxe_wifi_info.ip_address[0] = '\0';
             bitaxe_wifi_info.is_connected = false;
         }
+        wifi_waiting_for_bitaxe_after_connect = true;
+        wifi_home_transition_ready_us = 0;
+        wifi_bitaxe_resubscribe_retry_us = esp_timer_get_time() + 4000LL * 1000;
         bitaxe_wifi_seen = true;
         ESP_LOGI(TAG, "Connect pressed for SSID '%s'", current_wifi_info.ssid);
         if (ssid_label) {
